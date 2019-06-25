@@ -5,7 +5,7 @@ Created on Mon May 20 00:56:55 2019
 
 @author: wuwenjun
 """
-from sklearn.cluster import KMeans
+from sklearn.cluster import MIniBatchKMeans
 
 
 def construct_kmeans(feat, dict_size=40):
@@ -20,9 +20,14 @@ def construct_kmeans(feat, dict_size=40):
         The resulted kmeans cluster model
 
     """
-    kmeans = KMeans(n_clusters=dict_size, random_state=0).fit(feat)
-
+    kmeans = MiniBatchKMeans(n_clusters=dict_size, random_state=0).partial_fit(feat)
+    
     return kmeans
+
+def partial_fit_k_means(feat, kmeans=None):
+    if kmeans is None:
+        return construct_kmeans(feat)
+    return kmeans.partial_fit(feat)
 
 def predict_kmeans(feat, kmeans):
     """function that assign word to closest k-means cluster.
