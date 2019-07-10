@@ -14,7 +14,19 @@ class Word:
     Iterator Class for constructing the word (120x120 patch)
     
     """
-    def __init__(self, img):
+    def padding(img, window_size):
+        h,w,_ = img.shape
+        h_pad = window_size - h%window_size
+        w_pad = window_size - w%window_size
+        top = math.floor(h_pad/2)
+        bottom = math.ceil(h_pad/2)
+        left = math.floor(w_pad/2)
+        right = math.ceil(w_pad/2)
+    
+        padded = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_REFLECT)
+        return padded
+    
+    def __init__(self, img, size=120):
         """
         Initializer for the word class
         
@@ -22,22 +34,14 @@ class Word:
             img: the input image (NxMx3) in numpy array
         
         """
-        h,w,_ = img.shape
-        h_pad = 120 - h%120
-        w_pad = 120 - w%120 
-        top = math.floor(h_pad/2)
-        bottom = math.ceil(h_pad/2)
-        left = math.floor(w_pad/2)
-        right = math.ceil(w_pad/2)
-    
-        padded = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_REFLECT)
+        padded = padding(img, size)
         h,w,_ = padded.shape
-        assert h%120 == 0, "height after padding is not divisible by 120"
-        assert w%120 == 0, "width after padding is not divisible by 120"
+        assert h%size == 0, "height after padding is not divisible by 120"
+        assert w%size == 0, "width after padding is not divisible by 120"
         self.img = padded
         self.h = h
         self.w = w
-        self.length = int((self.h/120) * (self.w/120))
+        self.length = int((self.h/size) * (self.w/size))
         
     def __len__(self):
         """
@@ -45,7 +49,7 @@ class Word:
         word in the image  
     
         """
-        return (self.h/120) * (self.w/120)
+        return (self.h/size) * (self.w/size)
         
     def bound_box(self, idx):
         """
@@ -57,11 +61,11 @@ class Word:
             Bounding box(int[]): [h_low, h_high, w_low, w_high]
         """
         assert idx < self.length, "Index Out of Bound"
-        num_word_w = int(self.w/120)
-        h = math.floor(idx / num_word_w) * 120
-        w = int(idx % (num_word_w) * 120)
+        num_word_w = int(self.w/size)
+        h = math.floor(idx / num_word_w) * size
+        w = int(idx % (num_word_w) * size)
         
-        return [h, h+120, w, w+120]
+        return [h, h+size, w, w+size]
         
     
     def __getitem__(self, idx):

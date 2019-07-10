@@ -9,27 +9,12 @@ from argparse import ArgumentParser
 import cv2
 import numpy as np
 from feature import calculate_feature, get_histogram
-from word import Word
 from cluster import *
 import os
 import pickle
 import glob
-from bag import Bag
+from util import *
 
-def get_hist_from_image(image_path, save_flag, save_path=None):
-    print(image_path)
-    image = cv2.imread(image_path)
-    image = np.array(image, dtype=int)
-    words = Word(image)
-    result = np.zeros([words.length, 320])
-
-    for word, i in words:
-        feat = calculate_feature(word, idx=i, save=save_flag, path=save_path)
-        hist = get_histogram(feat, nbins=histogram_bin)
-        result[i,:] = hist
-    if save_path is not None:
-        pickle.dump(result, open(save_path, 'wb'))
-    return result
 
 
 
@@ -40,14 +25,21 @@ if __name__ == '__main__':
                         default='kmeans',
                         const='kmeans',
                         nargs='?',
-                        choices=['kmeans', 'kmeans_visual', 'classifier_train', 'classifier_test'],
+                        choices=['feature', 'kmeans', 'kmeans_visual', 'classifier_train', 'classifier_test'],
                         help='Choose mode from k-means clustering, visualization and classification_training, classification_testing')
     parser.add_argument('--single_image', default=None, help='Input image path')
     parser.add_argument('--image_folder', default=None, help='Input image batch folder' )
     parser.add_argument('--save_intermediate', default=False, help='Whether or not to save the intermediate results')
     parser.add_argument('--dict_size', default= 40, help='Dictionary Size for KMeans')
     parser.add_argument('--histogram_bin', default=64, help='Bin size for histogram')
-    parser.add_argument('--save_path', default='/Users/wuwenjun/Documents/UW/Research/ITCR/Poster/output/test', help='save_path for results')
+    parser.add_argument('--save_path', default='/Users/wuwenjun/Documents/UW/Research/ITCR/Poster/output/test', help='save_path for outputs: e.g.features, kmeans, classifier')
+    parser.add_argument('--word_size', default=120, help='Size of a word (in a bag of words model)')
+    parser.add_argument('--bag_size', default=3600, help="Size of a bag (in a bag of words model)')
+    parser.add_argument('--overlap_bag', default=2400, help='Overlapping pixels between bags')
+    parser.add_argument('--classifier', default='logistic',
+                        const='logistic',
+                        nargs='?',
+                        choices=['logistic', 'svm'])
     args = parser.parse_args()
 
     mode = args.mode
@@ -57,6 +49,9 @@ if __name__ == '__main__':
     dict_size = args.dict_size
     histogram_bin = args.histogram_bin
     save_path = args.save_path
+    word_size = args.word_size
+    bag_size = args.bag_size
+    overlap = args.overlap_bag
 
     if mode == 'kmeans':
 
@@ -65,8 +60,8 @@ if __name__ == '__main__':
 
         if image_path is not None and save_path is not None:
             # Save features
-            filename = save_path + '_feat.pkl'
-            result = get_hist_from_image(image_path, save_flag, fiename)
+            filename = save_path + '_feat_word.pkl'
+            result = get_feat_from_image(image_path, save_flag, word_size, fiename)
 
             # K-Means Part
 
@@ -78,17 +73,20 @@ if __name__ == '__main__':
         elif folder_path is not None and save_path is not None:
             print('-------Running Batch Job-------')
             # Feature computation and K-Means clustering in batch
-            path = folder_path + '/*.%s'
             im_list = [glob.glob(path % ext) for ext in ["jpg","png","tif"]]
             for im_l in im_list:
                 if len(im_l) != 0:
                     print('# of images: %r' %(len(im_l)))
+                    count = 0
                     for im_p in im_l:
+                        if count % 10 == 0: print('Processed %r / %r' %(count, len(im_l)))
+                        count += 1
                         # get filename without extension
                         base = os.path.basename(im_p)
                         path_noextend = os.path.splitext(base)[0]
-                        filename = save_path + '/'+  path_noextend  + '_feat.pkl'
-                        result = get_hist_from_image(im_p, save_flag, filename)
+                        fname = path_noextend  + '_feat.pkl'
+                        filename = os.path.join(filename, fname)
+                        result = get_feat_from_image(im_p, save_flag, word_size, filename)
 
                         # Online-Kmeans
                         if first_image:
@@ -98,12 +96,33 @@ if __name__ == '__main__':
                         first_image = False
                         assert kmeans is not None, "kmeans construction/update invalid"
             if kmeans is not None:
-                filename = save_path + '/kmeans.pkl'
+                filename = os.path.join(save_path, 'kmeans.pkl')
                 pickle.dump(kmeans, open(filename, 'wb'))
+            
+            #Compute histogram from 
         else:
             print('Error: Input image path is None or save path is None.')
 
-    #elif mode == 'classifier-train':
+    elif mode == 'classifier-train':
+        filename = os.path.join(save_path, 'kmeans.pkl')
+        loaded_kmeans = pickle.load(open(kmeans_filename, 'rb'))
+        assert folder_path is not None or image_path is not None, "Error: Input image path is None or save path is None."
+        assert save_path is not None, "Save Path is None"
+        assert loaded_kmeans is not None, "Path incorrect/File doesnt exist"
+        
+        if image_path is not None:
+            filename = save_path + '_feat_bag.pkl'
+            result = get_hist_from_image(image_path, loaded_kmeans, dict_size, word_size, 
+                            bag_size, overlap, save_flag, save_path)
+            
+            
+            
+            
+            
+        
+        
+        
+        
 
 
 
