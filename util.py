@@ -20,7 +20,7 @@ def get_feat_from_image(image_path, save_flag, word_size, image=None, save_path=
     if image is None:
         image = cv2.imread(image_path)
         image = np.array(image, dtype=int)
-    
+
     words = Word(image, size=word_size)
     result = np.zeros([words.length, 320])
 
@@ -38,7 +38,7 @@ def get_feat_from_image(image_path, save_flag, word_size, image=None, save_path=
         pickle.dump(result, open(save_path, 'wb'))
     return result
 
-def get_hist_from_image(image_path, kmeans, dict_size, word_size, 
+def get_hist_from_image(image_path, kmeans, dict_size, word_size,
                         bag_size, overlap, save_flag, save_path):
     print(image_path)
     image = cv2.imread(image_path)
@@ -51,7 +51,7 @@ def get_hist_from_image(image_path, kmeans, dict_size, word_size,
         hist_bag = get_histogram(cluster_words, nbins=dict_size)
         result[i, :] = hist_bag
     pickle.dump(result, open(save_path, 'wb'))
-    return result        
+    return result
 
 
 
@@ -65,16 +65,16 @@ def preprocess_roi_csv(csv_file):
     caseID = f['Case ID']
     Y = f['Y']
     X = f['X']
-    
+
     height = f['Height']
-    width = f['width']
-    
+    width = f['Width']
+
     result = {}
-    
+
     i = 0
     while i < len(caseID):
         # row_up, row_down, col_left, col_right
-        
+
         bbox = [Y[i], Y[i] + height[i], X[i], X[i] + width[i]]
         bb_l = result.get(caseID[i])
         if bb_l is None:
@@ -85,23 +85,7 @@ def preprocess_roi_csv(csv_file):
     return result
 
 
-def bound_box(self, idx):
-    """
-    Function that return the bounding box of a word given its index
-    Args:
-        ind: int, ind < number of words
-    
-    Returns:
-        Bounding box(int[]): [h_low, h_high, w_low, w_high]
-    """
-    assert idx < self.length, "Index Out of Bound"
-    num_bag_w = int((self.w-self.overlap_pixel)/(self.size-self.overlap_pixel))
-    h = int(math.floor(idx / num_bag_w) * (self.size-self.overlap_pixel))
-    w = int(idx % (num_bag_w) * (self.size-self.overlap_pixel))
-    
-    return [h, h+size, w, w+size]
-
-def calculate_label(mask, size=3600, overlap_pixel=2400):
+def calculate_label_from_mask(mask, size=3600, overlap_pixel=2400):
     bags = Bag(mask, size=size, overlap_pixel=overlap_pixel)
     label = np.zeros(bags.length)
     for bag, i in bags:
@@ -111,10 +95,30 @@ def calculate_label(mask, size=3600, overlap_pixel=2400):
             label[i] = 0
     return label
 
+def bound_box(idx, w, length, size, overlap_pixel):
+    """
+    Function that return the bounding box of a word given its index
+    Args:
+        ind: int, ind < number of words
 
-        
-                
+    Returns:
+        Bounding box(int[]): [h_low, h_high, w_low, w_high]
+    """
+    assert idx < length, "Index Out of Bound"
+    num_bag_w = int((w-overlap_pixel)/(size-overlap_pixel))
+    box_h = int(math.floor(idx / num_bag_w) * (size-overlap_pixel))
+    box_w = int(idx % (num_bag_w) * (size-overlap_pixel))
 
+    return [box_h, box_h+size, box_w, box_w+size]
 
-    
-    
+def calculate_label_from_bbox(dict_bbox, case_ID, w, length, size=3600, overlap_pixel=2400):
+    bboxes = dict_bbox[case_ID]
+    result = np.zeros(length)
+    for i in range(1, length):
+        bb = bound_box(i, w, length, size, overlap_pixel)
+        for bbox in bboxes:
+            if bb[0] >= bbox[0] and bb[1] <= bbox[1] and bb[2] >= bbox[2] and bb[3] <= bbox[3]:
+                result[i] = 1
+                break
+    return result
+
