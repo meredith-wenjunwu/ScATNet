@@ -111,14 +111,20 @@ def bound_box(idx, w, length, size, overlap_pixel):
 
     return [box_h, box_h+size, box_w, box_w+size]
 
-def calculate_label_from_bbox(dict_bbox, case_ID, w, length, size=3600, overlap_pixel=2400):
+def calculate_label_from_bbox(dict_bbox, case_ID, w, length, factor, size=3600, overlap_pixel=2400):
     bboxes = dict_bbox[case_ID]
     result = np.zeros(length)
     for i in range(1, length):
         bb = bound_box(i, w, length, size, overlap_pixel)
         for bbox in bboxes:
-            if bb[0] >= bbox[0] and bb[1] <= bbox[1] and bb[2] >= bbox[2] and bb[3] <= bbox[3]:
-                result[i] = 1
+            bbox = [int(x/4) for x in bbox]
+
+            #if bb[0] >= bbox[0] and bb[1] <= bbox[1] and bb[2] >= bbox[2] and bb[3] <= bbox[3]:
+            # if row overlaps
+            if (bb[1] <= bbox[1] and bb[1] >= bbox[0]) or (bb[0] >= bbox[0] and bb[0] <= bbox[1]):
+                # if col overlaps
+                if (bb[3] <=bbox[3] and bb[3] >= bbox[2]) or (bb[2] >= bbox[2] and bb[2] <= bbox[3]):
+                    result[i] = 1
                 break
     return result
 
