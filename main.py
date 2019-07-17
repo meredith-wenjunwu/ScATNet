@@ -14,7 +14,7 @@ import os
 import pickle
 import glob
 from util import *
-
+from classifier import *
 
 
 
@@ -34,12 +34,16 @@ if __name__ == '__main__':
     parser.add_argument('--histogram_bin', default=64, help='Bin size for histogram')
     parser.add_argument('--save_path', default='/Users/wuwenjun/Documents/UW/Research/ITCR/Poster/output/test', help='save_path for outputs: e.g.features, kmeans, classifier')
     parser.add_argument('--word_size', default=120, help='Size of a word (in a bag of words model)')
-    parser.add_argument('--bag_size', default=3600, help="Size of a bag (in a bag of words model)')
+    parser.add_argument('--bag_size', default=3600, help="Size of a bag (in a bag of words model)")
     parser.add_argument('--overlap_bag', default=2400, help='Overlapping pixels between bags')
+    parser.add_argument('--ROI_csv', default=None, help='Input csv file for ROI tracking data')
     parser.add_argument('--classifier', default='logistic',
                         const='logistic',
                         nargs='?',
                         choices=['logistic', 'svm'])
+    parser.add_argument('--trained_model', default=None, help='previously trained model path')
+    parser.add_argument('--lr', default=0.001, help='initial learning rate')
+    parser.add_argument('--learning_rate', default='optimal', help='https://scikit-learn.org/0.15/modules/generated/sklearn.linear_model.SGDClassifier.html#sklearn.linear_model.SGDClassifier')
     args = parser.parse_args()
 
     mode = args.mode
@@ -50,8 +54,10 @@ if __name__ == '__main__':
     histogram_bin = args.histogram_bin
     save_path = args.save_path
     word_size = args.word_size
+    csv_file = args.ROI_csv
     bag_size = args.bag_size
     overlap = args.overlap_bag
+    clf_filename = args.trained_model
 
     if mode == 'kmeans':
 
@@ -73,56 +79,71 @@ if __name__ == '__main__':
         elif folder_path is not None and save_path is not None:
             print('-------Running Batch Job-------')
             # Feature computation and K-Means clustering in batch
-            im_list = [glob.glob(path % ext) for ext in ["jpg","png","tif"]]
-            for im_l in im_list:
-                if len(im_l) != 0:
-                    print('# of images: %r' %(len(im_l)))
-                    count = 0
-                    for im_p in im_l:
-                        if count % 10 == 0: print('Processed %r / %r' %(count, len(im_l)))
-                        count += 1
-                        # get filename without extension
-                        base = os.path.basename(im_p)
-                        path_noextend = os.path.splitext(base)[0]
-                        fname = path_noextend  + '_feat.pkl'
-                        filename = os.path.join(filename, fname)
-                        result = get_feat_from_image(im_p, save_flag, word_size, filename)
 
-                        # Online-Kmeans
-                        if first_image:
-                            kmeans = construct_kmeans(result)
-                        else:
-                            partial_fit_k_means(result, kmeans)
-                        first_image = False
-                        assert kmeans is not None, "kmeans construction/update invalid"
+            im_list = glob.glob(os.path.join(folder_path, "*.jpg")) + glob.glob(os.path.join(folder_path, "*.png")) + glob.glob(os.path.join(folder_path, "*.tif"))
+            count = 0
+            for im_p in im_list:
+                print('# of images: %r' %(len(im_list)))
+                if count % 10 == 0: print('Processed %r / %r' %(count, len(im_list)))
+                count += 1
+                # get filename without extension
+                base = os.path.basename(im_p)
+                path_noextend = os.path.splitext(base)[0]
+                fname = path_noextend  + '_feat.pkl'
+                filename = os.path.join(save_path, fname)
+                result = get_feat_from_image(im_p, save_flag, word_size, save_path=filename)
+
+                # Online-Kmeans
+                if first_image:
+                    kmeans = construct_kmeans(result)
+                else:
+                    partial_fit_k_means(result, kmeans)
+                    first_image = False
+                    assert kmeans is not None, "kmeans construction/update invalid"
             if kmeans is not None:
                 filename = os.path.join(save_path, 'kmeans.pkl')
                 pickle.dump(kmeans, open(filename, 'wb'))
-            
-            #Compute histogram from 
+            #Compute histogram from
         else:
             print('Error: Input image path is None or save path is None.')
 
     elif mode == 'classifier-train':
-        filename = os.path.join(save_path, 'kmeans.pkl')
+        kmeans_filename = os.path.join(save_path, 'kmeans.pkl')
+
         loaded_kmeans = pickle.load(open(kmeans_filename, 'rb'))
         assert folder_path is not None or image_path is not None, "Error: Input image path is None or save path is None."
         assert save_path is not None, "Save Path is None"
         assert loaded_kmeans is not None, "Path incorrect/File doesnt exist"
-        
+        assert csv_file is not None, "ROI tracking data not provided"
+
+        if clf_filename is None:
+            # initialize model
+            clf = model_init()
+        else:
+            clf = model_load(clf_filename)
+
         if image_path is not None:
-            filename = save_path + '_feat_bag.pkl'
-            result = get_hist_from_image(image_path, loaded_kmeans, dict_size, word_size, 
-                            bag_size, overlap, save_flag, save_path)
-            
-            
-            
-            
-            
-        
-        
-        
-        
+            # get filename without extension
+            base = os.path.basename(image_path)
+            path_noextend = os.path.splitext(base)[0]
+            caseID = int(path_noextend.split('_')[0][1:])
+            dict_bbox = preprocess_roi_csv(csv_file)
+            assert dict_bbox.get(caseID) is not None, "case ID does not exist: check image name convention"
+            feat_outpath = os.path.join(save_path, path_noextend + '_feat_bag.pkl')
+            bag_feat, bags = get_hist_from_image(image_path, loaded_kmeans, dict_size, word_size, bag_size, overlap, save_flag, feat_outpath)
+
+            label_bags = calculate_label_from_bbox(dict_bbox, caseID, bags.w, bags.length, 4)
+            clf = model_update(clf, bag_feat, label_bags)
+            model_save(clf, clf_filename)
+
+
+
+
+
+
+
+
+
 
 
 

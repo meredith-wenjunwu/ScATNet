@@ -8,19 +8,20 @@ Created on Mon Jul  8 01:47:17 2019
 
 from bag import Bag
 from word import Word
+from feature import calculate_feature, get_histogram
 import numpy as np
 import os
 import cv2
 import math
 import h5py
+import pickle
 import pandas as pd
 
-def get_feat_from_image(image_path, save_flag, word_size, image=None, save_path=None):
-    # print(image_path)
+def get_feat_from_image(image_path, save_flag, word_size, histogram_bin=64, image=None, save_path=None):
+    # print(image)
     if image is None:
         image = cv2.imread(image_path)
         image = np.array(image, dtype=int)
-
     words = Word(image, size=word_size)
     result = np.zeros([words.length, 320])
 
@@ -28,7 +29,7 @@ def get_feat_from_image(image_path, save_flag, word_size, image=None, save_path=
         # get filename without extension
         if save_path is not None:
             dname = os.path.dirname(save_path)
-            base = os.path.basename(im_p)
+            base = os.path.basename(image_path)
             path_noextend = os.path.splitext(base)[0]
             filename = os.path.join(dname, path_noextend)
         feat = calculate_feature(word, idx=i, save=save_flag, path=filename)
@@ -51,7 +52,7 @@ def get_hist_from_image(image_path, kmeans, dict_size, word_size,
         hist_bag = get_histogram(cluster_words, nbins=dict_size)
         result[i, :] = hist_bag
     pickle.dump(result, open(save_path, 'wb'))
-    return result
+    return result, bags
 
 
 
