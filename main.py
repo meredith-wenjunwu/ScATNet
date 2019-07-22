@@ -135,15 +135,25 @@ if __name__ == '__main__':
             label_bags = calculate_label_from_bbox(dict_bbox, caseID, bags.w, bags.length, 4)
             clf = model_update(clf, bag_feat, label_bags)
             model_save(clf, clf_filename)
+        elif foler_path is not None:
+             print('-------Running Batch Job-------')
+            # Feature computation and K-Means clustering in batch
 
+            im_list = glob.glob(os.path.join(folder_path, "*.jpg")) + glob.glob(os.path.join(folder_path, "*.png")) + glob.glob(os.path.join(folder_path, "*.tif"))
+            count = 0
+            for im_p in im_list:
+                print('# of images: %r' %(len(im_list)))
+                if count % 10 == 0: print('Processed %r / %r' %(count, len(im_list)))
+                count += 1
+                # get filename without extension
+                base = os.path.basename(image_path)
+                path_noextend = os.path.splitext(base)[0]
+                caseID = int(path_noextend.split('_')[0][1:])
+                print('CaseID: {}'.(caseID))
 
-
-
-
-
-
-
-
-
-
+                dict_bbox = preprocess_roi_csv(csv_file)
+                assert dict_bbox.get(caseID) is not None, "case ID does not exist: check image name convention"
+                feat_outpath = os.path.join(save_path, path_noextend + '_feat_bag.pkl')
+                bag_feat, bags = get_hist_from_image(image_path, loaded_kmeans, dict_size, word_size, bag_size,
+                                                    overlap, save_flag, feat_outpath)
 
