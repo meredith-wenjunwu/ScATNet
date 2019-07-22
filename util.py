@@ -11,6 +11,7 @@ from word import Word
 from feature import calculate_feature, get_histogram
 import numpy as np
 import os
+import glob
 import cv2
 import math
 import h5py
@@ -21,6 +22,7 @@ def get_feat_from_image(image_path, save_flag, word_size, histogram_bin=64, imag
     # print(image)
     if image is None:
         image = cv2.imread(image_path)
+        assert image is not None, "imread fail, check path"
         image = np.array(image, dtype=int)
     words = Word(image, size=word_size)
     result = np.zeros([words.length, 320])
@@ -128,4 +130,34 @@ def calculate_label_from_bbox(dict_bbox, case_ID, w, length, factor, size=3600, 
                     result[i] = 1
                 break
     return result
+
+def biggest_bbox(bbox_list):
+    row_low = 1000000000000
+    row_high = -1
+    col_low = 1000000000000
+    col_high = -1
+    for bbox in bbox_list:
+        row_low = (bbox[0] if bbox[0] < row_low else row_low)
+        row_high = (bbox[1] if bbox[1] > row_high else row_high)
+        col_low = (bbox[2] if bbox[2] < col_low else col_low)
+        col_high = (bbox[3] if bbox[3] > col_high else col_high)
+    return [row_low, row_high, col_low, col_high]
+
+def crop_saveroi(image_folder, dict_bbox, appendix='.jpg'):
+    f_ls = glob.glob(os.path.join(image_folder, '*.tif'))
+    for f in f_ls:
+        base = os.path.basename(f)
+        path_noextend = os.path.splitext(f)[0]
+        outname = path_noextend + appendix
+        if not os.path.exists(outname):
+            path_noextend = os.path.splitext(base)[0]
+            caseID = int(path_noextend.split('_')[0][1:])
+            bboxes = dict_bbox[caseID]
+            bbox_final = biggest_bbox(bboxes)
+            size_r = bbox_final[1] - bbox_final[0]
+            size_c = bbox_final[3] - bbox_final[2]
+            args = 'convert ' + f + ' -crop ' +str(size_c)+'x'+str(size_r)+'+'+str(bbox_final[2])+'+'+str(bbox_final[0])+ ' ' + outname
+            print(args)
+            os.system(args)
+
 

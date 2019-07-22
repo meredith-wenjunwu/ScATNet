@@ -136,7 +136,7 @@ if __name__ == '__main__':
             clf = model_update(clf, bag_feat, label_bags)
             model_save(clf, clf_filename)
         elif foler_path is not None:
-             print('-------Running Batch Job-------')
+            print('-------Running Batch Job-------')
             # Feature computation and K-Means clustering in batch
 
             im_list = glob.glob(os.path.join(folder_path, "*.jpg")) + glob.glob(os.path.join(folder_path, "*.png")) + glob.glob(os.path.join(folder_path, "*.tif"))
@@ -149,7 +149,7 @@ if __name__ == '__main__':
                 base = os.path.basename(image_path)
                 path_noextend = os.path.splitext(base)[0]
                 caseID = int(path_noextend.split('_')[0][1:])
-                print('CaseID: {}'.(caseID))
+                print('CaseID: {}'.format(caseID))
 
                 dict_bbox = preprocess_roi_csv(csv_file)
                 assert dict_bbox.get(caseID) is not None, "case ID does not exist: check image name convention"

@@ -46,8 +46,8 @@ def model_report(clf, Y, Y_t, train=False):
         mode = 'Test '
     accuracy = accuracy_score(Y_t, Y)
     metrics = precision_recall_fscore_support(Y_t, Y)
-    print(mode + 'Precision =  {:.2222}'.(metrics[0][0]))
-    print(mode + 'Recall =  {:.2222}'.(metrics[1][0]))
-    print(mode + 'F1 score =  {:.2222}'.(metrics[2][0]))
-    print(mode + 'Accuracy =  {:.2222}'.(accuracy))
+    print(mode + 'Precision =  {:.2222}'.format(metrics[0][0]))
+    print(mode + 'Recall =  {:.2222}'.format(metrics[1][0]))
+    print(mode + 'F1 score =  {:.2222}'.format(metrics[2][0]))
+    print(mode + 'Accuracy =  {:.2222}'.format(accuracy))
 
