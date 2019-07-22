@@ -82,8 +82,8 @@ if __name__ == '__main__':
 
             im_list = glob.glob(os.path.join(folder_path, "*.jpg")) + glob.glob(os.path.join(folder_path, "*.png")) + glob.glob(os.path.join(folder_path, "*.tif"))
             count = 0
+            print('# of images: %r' %(len(im_list)))
             for im_p in im_list:
-                print('# of images: %r' %(len(im_list)))
                 if count % 10 == 0: print('Processed %r / %r' %(count, len(im_list)))
                 count += 1
                 # get filename without extension
