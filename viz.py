@@ -7,6 +7,7 @@ Created on Mon May 20 14:37:43 2019
 """
 
 import cv2
+from util import *
 from feature import *
 from word import Word
 import numpy as np
@@ -18,8 +19,8 @@ sns.set()
 import glob
 
 
-x = cv2.imread('/projects/medical4/ximing/DistractorProject/page5/A1461_201109151951.jpg')
-x = np.array(x, dtype=int)
+#x = cv2.imread('/projects/medical4/ximing/DistractorProject/page5/A1461_201109151951.jpg')
+#x = np.array(x, dtype=int)
 
 # %%
 #h, w, _ = x.shape
@@ -39,8 +40,8 @@ x = np.array(x, dtype=int)
 #
 
 
-
-words = Word(x)
+im,_ = load_mat('/projects/medical4/ximing/DistractorProject/page3/roi/2428_1.mat')
+loaded_feat = get_feat_from_image(None, False, 120, image=im)
 
 #or word, i in words:
 #
@@ -58,59 +59,56 @@ words = Word(x)
 
 
 # Generating cluster images
-kmeans_filename = '/projects/medical4/ximing/DistractorProject/feature_page5/kmeans.pkl'
-feat_filename = '/projects/medical4/ximing/DistractorProject/feature_page5/A1461_201109151951_feat.pkl'
+kmeans_filename = '/projects/medical4/ximing/DistractorProject/feature_page3/kmeans.pkl'
+#feat_filename = '/projects/medical4/ximing/DistractorProject/feature_page5/A1461_201109151951_feat.pkl'
 
 loaded_kmeans = pickle.load(open(kmeans_filename, 'rb'))
-loaded_feat = pickle.load(open(feat_filename, 'rb'))
+#loaded_feat = pickle.load(open(feat_filename, 'rb'))
 
 result = loaded_kmeans.predict(loaded_feat)
 distances = loaded_kmeans.transform(loaded_feat)
 labels = np.unique(result)
-
-#or l in labels:
-#    p = os.path.join('/projects/medical4/ximing/DistractorProject/visualize/cluster_page5/', str(l))
-#    f not s.path.exists(p):
-#        os.mkdir()
-#
-#for idx, r in enumerate(result):
-#    w = words[idx][0]
-#    p = os.path.join('/projects/medical4/ximing/DistractorProject/visualize/cluster_page5/', str(r),  '{}_'+ str(idx) + '.jpg')
-#    cv2.imwrite(p, w)
-
-# Generating summarization pictures
-
-to_plot = np.zeros([40, 25])
+words = Word(im)
 
 for l in labels:
-    indices = [i for i, x in enumerate(result) if x == l]
-    dist = [distances[i, l] for i in indices]
-    dist = np.array(dist)
-    ind = np.argsort(dist)
-    print(len(ind))
-    if len(ind) >= 25:
-        to_plot[l,0:25] = ind[0:25]
-    else:
-        print(dist)
-        to_plot[l,0:len(ind)] = ind[:]
+    p = os.path.join('/projects/medical4/ximing/DistractorProject/visualize/cluster_page3/', str(l))
+    if not os.path.exists(p):
+        os.mkdir(p)
+#
+for idx, r in enumerate(result):
+    w = words[idx][0]
+    p = os.path.join('/projects/medical4/ximing/DistractorProject/visualize/cluster_page3/', str(r),  '{}_'+ str(idx) + '.jpg')
+    cv2.imwrite(p, w)
 
+#Generating summarization pictures
+
+to_plot = np.zeros([40, 9])
+for l in labels:
+   indices = [i for i, x in enumerate(result) if x == l]
+   dist = [distances[i, l] for i in indices]
+   dist = np.array(dist)
+   ind = np.argsort(dist)
+   print(len(ind))
+   if len(ind) >= 9:
+       to_plot[l,0:9] = ind[0:9]
+   else:
+       to_plot[l,0:len(ind)] = ind[:]
 
 for l in range(40):
-    p = os.path.join('/projects/medical4/ximing/DistractorProject/visualize/cluster_page5/', str(l))
-    out = os.path.join('/projects/medical4/ximing/DistractorProject/visualize/cluster_page5/', '{}.jpg'.format(l))
+    p = os.path.join('/projects/medical4/ximing/DistractorProject/visualize/cluster_page3/', str(l))
+    out = os.path.join('/projects/medical4/ximing/DistractorProject/visualize/cluster_page3/', '{}.jpg'.format(l))
     f_ls = glob.glob(os.path.join(p, '*_*.jpg'))
-    if len(f_ls) > 25:
-        plot_25 = to_plot[l,:]
+    if len(f_ls) > 9:
+        #plot_25 = to_plot[l,:]
+        plot_25 = np.random.choice(f_ls, 9)
         #width =  10 + 120*5
-        viz = np.ones([5*120+40, 5*120+40, 3])*255
+        viz = np.ones([3*120+40, 3*120+40, 3])*255
         for idx, f in enumerate(plot_25):
-            im = words[f][0]
+            im = np.array(cv2.imread(f))
             #if (idx <10): print(idx)
-            print('{}:{}, {}:{}'.format(int(idx/5)*120,(int(idx/5)+1)*120, int(idx%5)*120, (int(idx%5)+1)*120))
-            if im.shape[0] > 120:
-                print(f)
-                print(idx)
-            viz[int(idx/5)*130:int(idx/5)*130+120, int(idx%5)*130:int(idx%5)*130+120,:] = im
+            print('{}:{}, {}:{}'.format(int(idx/3)*120,(int(idx/3)+1)*120, int(idx%3)*120, (int(idx%3)+1)*120))
+            #if im.shape[0] > 120:
+            viz[int(idx/3)*130:int(idx/3)*130+120, int(idx%3)*130:int(idx%3)*130+120,:] = im
 
         cv2.imwrite(out, viz)
 
@@ -145,7 +143,7 @@ for l in range(40):
 #for word, i in words:
 #    b_box = words.bound_box(i)
 #    ind, = np.where(uniq==labels[i])
-#    x[b_box[0]:b_box[1], b_box[2]:b_box[3],:] = [channel*255 for channel in c[ind[0]]]
+#    x[b_box[0]:b_box[1], b_box[2]:b_box[3],:] = [channel*255 for channel in c[nd[0]]]
 #
 #
 #border = 10

@@ -21,7 +21,7 @@ from classifier import *
 if __name__ == '__main__':
 
     parser = ArgumentParser()
-    parser.add_argument('--mode',
+    parser.add_argument('--mode', required=True,
                         default='kmeans',
                         const='kmeans',
                         nargs='?',
@@ -29,6 +29,7 @@ if __name__ == '__main__':
                         help='Choose mode from k-means clustering, visualization and classification_training, classification_testing')
     parser.add_argument('--single_image', default=None, help='Input image path')
     parser.add_argument('--image_folder', default=None, help='Input image batch folder' )
+    parser.add_argument('--image_format', default='.jpg', choices=['.jpg', '.png', '.tif', '.mat'],help='Input format')
     parser.add_argument('--save_intermediate', default=False, help='Whether or not to save the intermediate results')
     parser.add_argument('--dict_size', default= 40, help='Dictionary Size for KMeans')
     parser.add_argument('--histogram_bin', default=64, help='Bin size for histogram')
@@ -49,6 +50,7 @@ if __name__ == '__main__':
     mode = args.mode
     image_path = args.single_image
     folder_path = args.image_folder
+    ext = args.image_format
     save_flag = args.save_intermediate
     dict_size = args.dict_size
     histogram_bin = args.histogram_bin
@@ -80,7 +82,7 @@ if __name__ == '__main__':
             print('-------Running Batch Job-------')
             # Feature computation and K-Means clustering in batch
 
-            im_list = glob.glob(os.path.join(folder_path, "*.jpg")) + glob.glob(os.path.join(folder_path, "*.png")) + glob.glob(os.path.join(folder_path, "*.tif"))
+            im_list = glob.glob(os.path.join(folder_path, '*' + ext))
             count = 0
             print('# of images: %r' %(len(im_list)))
             for im_p in im_list:
@@ -91,8 +93,12 @@ if __name__ == '__main__':
                 path_noextend = os.path.splitext(base)[0]
                 fname = path_noextend  + '_feat.pkl'
                 filename = os.path.join(save_path, fname)
-                result = get_feat_from_image(im_p, save_flag, word_size, save_path=filename)
-
+                if ext != '.mat':
+                    result = get_feat_from_image(im_p, save_flag, word_size, save_path=filename)
+                else:
+                    im, m = load_mat(im_p)
+                    result = get_feat_from_image(None, save_flag, word_size, image=im)
+                    pickle.dump(kmeans, open(filename, 'wb'))
                 # Online-Kmeans
                 if first_image:
                     kmeans = construct_kmeans(result)
@@ -106,7 +112,9 @@ if __name__ == '__main__':
             #Compute histogram from
         else:
             print('Error: Input image path is None or save path is None.')
-
+    elif mode == 'k-means-visualization':
+        # Not implemented
+        print('Not implmentd yet')
     elif mode == 'classifier-train':
         kmeans_filename = os.path.join(save_path, 'kmeans.pkl')
 

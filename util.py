@@ -17,6 +17,8 @@ import math
 import h5py
 import pickle
 import pandas as pd
+from sklearn.model_selection import KFold
+
 
 def get_feat_from_image(image_path, save_flag, word_size, histogram_bin=64, image=None, save_path=None):
     # print(image)
@@ -34,6 +36,7 @@ def get_feat_from_image(image_path, save_flag, word_size, histogram_bin=64, imag
             base = os.path.basename(image_path)
             path_noextend = os.path.splitext(base)[0]
             filename = os.path.join(dname, path_noextend)
+        else: filename=None
         feat = calculate_feature(word, idx=i, save=save_flag, path=filename)
         hist = get_histogram(feat, nbins=histogram_bin)
         result[i,:] = hist
@@ -61,7 +64,10 @@ def get_hist_from_image(image_path, kmeans, dict_size, word_size,
 def load_mat(filename):
     f = h5py.File(filename, 'r')
     keys = list(f.keys())
-    return np.array(f["I"]), np.array(f["M"])
+    im = np.array(f["I"])
+    im = np.transpose(im, [2, 1, 0])
+    im = np.flip(im, 2)
+    return im, np.array(f["M"])
 
 def preprocess_roi_csv(csv_file):
     f = pd.read_csv(csv_file)
@@ -147,11 +153,10 @@ def crop_saveroi(image_folder, dict_bbox, appendix='.jpg'):
     f_ls = glob.glob(os.path.join(image_folder, '*.tif'))
     for f in f_ls:
         base = os.path.basename(f)
-        path_noextend = os.path.splitext(f)[0]
-        outname = path_noextend + appendix
+        name_noextend = os.path.splitext(base)[0]
+        outname = os.path.join(image_folder, 'roi', name_noextend + appendix)
         if not os.path.exists(outname):
-            path_noextend = os.path.splitext(base)[0]
-            caseID = int(path_noextend.split('_')[0][1:])
+            caseID = int(name_noextend.split('_')[0][1:])
             bboxes = dict_bbox[caseID]
             bbox_final = biggest_bbox(bboxes)
             size_r = bbox_final[1] - bbox_final[0]
@@ -160,4 +165,16 @@ def crop_saveroi(image_folder, dict_bbox, appendix='.jpg'):
             print(args)
             os.system(args)
 
+def cross_validi_index(feature,  feature_folder=None, n_splits=10):
+    kf = KFold(n_splits=ns)
+    if feature_folder is not None:
+        f_ls = glob.glob(os.path.join(feature_folder, '*.pkl'))
+        split_ls = {}
+        for f in f_ls:
+            loaded_feat = pickle.load(open(f, 'rb'))
+            ind = kf.split(loaded_feat)
+            split_ls[f] = ind
+        return split_ls
+    return kf.split(feature)
 
+#def get_negative_sample()
