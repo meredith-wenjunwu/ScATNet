@@ -21,7 +21,7 @@ def construct_kmeans(feat, init_size=200):
         The resulted kmeans cluster model
 
     """
-    kmeans = MiniBatchKMeans(n_clusters=dict_size, random_state=0).partial_fit(feat)
+    kmeans = MiniBatchKMeans(n_clusters=init_size, random_state=0).partial_fit(feat)
 
     return kmeans
 

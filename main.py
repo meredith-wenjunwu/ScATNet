@@ -77,7 +77,7 @@ if __name__ == '__main__':
             # K-Means Part
 
             filename = save_path + '_kmeans.pkl'
-            kmeans = construct_kmeans(result) if first_image else kmeans.partial_fit_kmeans(result, kmeans)_
+            kmeans = construct_kmeans(result) if first_image else kmeans.partial_fit_kmeans(result, kmeans)
 
             pickle.dump(kmeans, open(filename, 'wb'))
 
