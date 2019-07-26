@@ -27,13 +27,14 @@ if __name__ == '__main__':
                         nargs='?',
                         choices=['feature', 'kmeans', 'kmeans_visual', 'classifier_train', 'classifier_test'],
                         help='Choose mode from k-means clustering, visualization and classification_training, classification_testing')
+    parser.add_argument('--trained_cluster', default=None, help='Previously trained kmeans clusters')
     parser.add_argument('--single_image', default=None, help='Input image path')
     parser.add_argument('--image_folder', default=None, help='Input image batch folder' )
-    parser.add_argument('--image_format', default='.jpg', choices=['.jpg', '.png', '.tif', '.mat'],help='Input format')
+    parser.add_argument('--image_format', required=True, default='.jpg', choices=['.jpg', '.png', '.tif', '.mat'],help='Input format')
     parser.add_argument('--save_intermediate', default=False, help='Whether or not to save the intermediate results')
     parser.add_argument('--dict_size', default= 40, help='Dictionary Size for KMeans')
     parser.add_argument('--histogram_bin', default=64, help='Bin size for histogram')
-    parser.add_argument('--save_path', default='/Users/wuwenjun/Documents/UW/Research/ITCR/Poster/output/test', help='save_path for outputs: e.g.features, kmeans, classifier')
+    parser.add_argument('--save_path', required=True, default='/Users/wuwenjun/Documents/UW/Research/ITCR/Poster/output/test', help='save_path for outputs: e.g.features, kmeans, classifier')
     parser.add_argument('--word_size', default=120, help='Size of a word (in a bag of words model)')
     parser.add_argument('--bag_size', default=3600, help="Size of a bag (in a bag of words model)")
     parser.add_argument('--overlap_bag', default=2400, help='Overlapping pixels between bags')
@@ -60,11 +61,13 @@ if __name__ == '__main__':
     bag_size = args.bag_size
     overlap = args.overlap_bag
     clf_filename = args.trained_model
+    kmeans = args.trained_cluster
 
     if mode == 'kmeans':
 
-        first_image = True
-        kmeans = None
+
+        kmeans = pickle.load(open(kmeans, 'rb')) if kmeans is not None else None
+        first_image = True if kmeans is None else False
 
         if image_path is not None and save_path is not None:
             # Save features
@@ -74,7 +77,7 @@ if __name__ == '__main__':
             # K-Means Part
 
             filename = save_path + '_kmeans.pkl'
-            kmeans = construct_kmeans(result)
+            kmeans = construct_kmeans(result) if first_image else kmeans.partial_fit_kmeans(result, kmeans)_
 
             pickle.dump(kmeans, open(filename, 'wb'))
 
@@ -103,26 +106,32 @@ if __name__ == '__main__':
                 if first_image:
                     kmeans = construct_kmeans(result)
                 else:
-                    partial_fit_k_means(result, kmeans)
+                    kmeans = partial_fit_k_means(result, kmeans)
                     first_image = False
                     assert kmeans is not None, "kmeans construction/update invalid"
-            if kmeans is not None:
-                filename = os.path.join(save_path, 'kmeans.pkl')
-                pickle.dump(kmeans, open(filename, 'wb'))
-            #Compute histogram from
+
+            hcluster = h_cluster(kmeans, final_size=dict_size)
+            filename = os.path.join(save_path, 'kmeans.pkl')
+            filename2 = os.path.join(save_path, 'hcluster.pkl')
+            pickle.dump(kmeans, open(filename, 'wb'))
+            pickle.dump(hcluster, open(filename2, 'wb'))
+
         else:
             print('Error: Input image path is None or save path is None.')
     elif mode == 'k-means-visualization':
         # Not implemented
         print('Not implmentd yet')
     elif mode == 'classifier-train':
-        kmeans_filename = os.path.join(save_path, 'kmeans.pkl')
-
-        loaded_kmeans = pickle.load(open(kmeans_filename, 'rb'))
+        assert save_path is not None and os.path.exists(save_path), "Feature/kmeans path is None or does not exist"
         assert folder_path is not None or image_path is not None, "Error: Input image path is None or save path is None."
-        assert save_path is not None, "Save Path is None"
         assert loaded_kmeans is not None, "Path incorrect/File doesnt exist"
         assert csv_file is not None, "ROI tracking data not provided"
+
+        kmeans_filename = os.path.join(save_path, 'kmeans.pkl')
+        hcluster_filename = os.path.join(save_path, 'hcluster.pkl')
+        assert os.path.exists(kmeans_filename) and os.path.exists(hcluster_filename), "Cannot find kmeans.pkl or hcluster.pkl"
+        loaded_kmeans = pickle.load(open(kmeans_filename, 'rb'))
+        loaded_hcluster = pickle.load(open(hcluster_filename, 'rb'))
 
         if clf_filename is None:
             # initialize model
@@ -134,12 +143,12 @@ if __name__ == '__main__':
             # get filename without extension
             base = os.path.basename(image_path)
             path_noextend = os.path.splitext(base)[0]
-            caseID = int(path_noextend.split('_')[0][1:])
-            dict_bbox = preprocess_roi_csv(csv_file)
-            assert dict_bbox.get(caseID) is not None, "case ID does not exist: check image name convention"
+            caseID = int(''.join(filter(str.isdigit, path_noextend.split('_')[0])))
             feat_outpath = os.path.join(save_path, path_noextend + '_feat_bag.pkl')
-            bag_feat, bags = get_hist_from_image(image_path, loaded_kmeans, dict_size, word_size, bag_size, overlap, save_flag, feat_outpath)
-
+            bag_feat, bags = get_hist_from_image(image_path, loaded_kmeans,loaded_hcluster, dict_size, word_size, bag_size, overlap, save_flag, feat_outpath)
+            if csv_file is not None:
+                dict_bbox = preprocess_roi_csv(csv_file)
+                assert dict_bbox.get(caseID) is not None, "case ID does not exist: check image name convention"
             label_bags = calculate_label_from_bbox(dict_bbox, caseID, bags.w, bags.length, 4)
             clf = model_update(clf, bag_feat, label_bags)
             model_save(clf, clf_filename)
