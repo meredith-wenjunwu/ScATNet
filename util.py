@@ -44,7 +44,7 @@ def get_feat_from_image(image_path, save_flag, word_size, histogram_bin=64, imag
         pickle.dump(result, open(save_path, 'wb'))
     return result
 
-def get_hist_from_image(image_path, kmeans, dict_size, word_size,
+def get_hist_from_image(image_path, kmeans, hclusters, dict_size, word_size,
                         bag_size, overlap, save_flag, save_path):
     print(image_path)
     image = cv2.imread(image_path)
@@ -53,7 +53,7 @@ def get_hist_from_image(image_path, kmeans, dict_size, word_size,
     result = np.zeros([bags.length, dict_size])
     for bag, i in bags:
         feat_words = get_feat_from_image(None, save_flag, word_size, image=bag)
-        cluster_words = predict_kmeans(feat_words, kmeans)
+        cluster_words = predict_kmeans(feat_words, kmeans, h_cluster=hclusters)
         hist_bag = get_histogram(cluster_words, nbins=dict_size)
         result[i, :] = hist_bag
     pickle.dump(result, open(save_path, 'wb'))
