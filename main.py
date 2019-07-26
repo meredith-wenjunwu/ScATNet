@@ -101,7 +101,7 @@ if __name__ == '__main__':
                 else:
                     im, m = load_mat(im_p)
                     result = get_feat_from_image(None, save_flag, word_size, image=im)
-                    pickle.dump(kmeans, open(filename, 'wb'))
+                    pickle.dump(result, open(filename, 'wb'))
                 # Online-Kmeans
                 if first_image:
                     kmeans = construct_kmeans(result)
