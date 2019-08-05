@@ -8,6 +8,7 @@ Created on Mon May 20 14:37:43 2019
 
 import cv2
 from util import *
+from cluster import *
 from feature import *
 from word import Word
 import numpy as np
@@ -60,14 +61,18 @@ loaded_feat = get_feat_from_image(None, False, 120, image=im)
 
 # Generating cluster images
 kmeans_filename = '/projects/medical4/ximing/DistractorProject/feature_page3/kmeans.pkl'
-#feat_filename = '/projects/medical4/ximing/DistractorProject/feature_page5/A1461_201109151951_feat.pkl'
+feat_filename = '/projects/medical4/ximing/DistractorProject/feature_page3/2428_1_feat.pkl'
+hcluster_filename = '/projects/medical4/ximing/DistractorProject/feature_page3/hcluster.pkl'
 
 loaded_kmeans = pickle.load(open(kmeans_filename, 'rb'))
 #loaded_feat = pickle.load(open(feat_filename, 'rb'))
+loaded_hcluster = pickle.load(open(hcluster_filename, 'rb'))
 
-result = loaded_kmeans.predict(loaded_feat)
+result = predict_kmeans(loaded_feat, loaded_kmeans, h_cluster=loaded_hcluster)
+
 distances = loaded_kmeans.transform(loaded_feat)
 labels = np.unique(result)
+print(labels)
 words = Word(im)
 
 for l in labels:
@@ -82,17 +87,17 @@ for idx, r in enumerate(result):
 
 #Generating summarization pictures
 
-to_plot = np.zeros([40, 9])
-for l in labels:
-   indices = [i for i, x in enumerate(result) if x == l]
-   dist = [distances[i, l] for i in indices]
-   dist = np.array(dist)
-   ind = np.argsort(dist)
-   print(len(ind))
-   if len(ind) >= 9:
-       to_plot[l,0:9] = ind[0:9]
-   else:
-       to_plot[l,0:len(ind)] = ind[:]
+#to_plot = np.zeros([40, 9])
+#for l in labels:
+#   indices = [i for i, x in enumerate(result) if x == l]
+#   dist = [distances[i, l] for i in indices]
+#   dist = np.array(dist)
+#   ind = np.argsort(dist)
+#   print(len(ind))
+#   if len(ind) >= 9:
+#       to_plot[l,0:9] = ind[0:9]
+#   else:
+#       to_plot[l,0:len(ind)] = ind[:]
 
 for l in range(40):
     p = os.path.join('/projects/medical4/ximing/DistractorProject/visualize/cluster_page3/', str(l))
@@ -106,7 +111,7 @@ for l in range(40):
         for idx, f in enumerate(plot_25):
             im = np.array(cv2.imread(f))
             #if (idx <10): print(idx)
-            print('{}:{}, {}:{}'.format(int(idx/3)*120,(int(idx/3)+1)*120, int(idx%3)*120, (int(idx%3)+1)*120))
+#            print('{}:{}, {}:{}'.format(int(idx/3)*120,(int(idx/3)+1)*120, int(idx%3)*120, (int(idx%3)+1)*120))
             #if im.shape[0] > 120:
             viz[int(idx/3)*130:int(idx/3)*130+120, int(idx%3)*130:int(idx%3)*130+120,:] = im
 

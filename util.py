@@ -45,10 +45,11 @@ def get_feat_from_image(image_path, save_flag, word_size, histogram_bin=64, imag
     return result
 
 def get_hist_from_image(image_path, kmeans, hclusters, dict_size, word_size,
-                        bag_size, overlap, save_flag, save_path):
+                        bag_size, overlap, save_flag, save_path, image=None):
     print(image_path)
-    image = cv2.imread(image_path)
-    image = np.array(image, dtype=int)
+    if image is None:
+        image = cv2.imread(image_path)
+        image = np.array(image, dtype=int)
     bags = Bag(image, size=bag_size, overlap_pixel=overlap)
     result = np.zeros([bags.length, dict_size])
     for bag, i in bags:

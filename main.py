@@ -67,7 +67,6 @@ if __name__ == '__main__':
 
 
         kmeans = pickle.load(open(kmeans, 'rb')) if kmeans is not None else None
-        first_image = True if kmeans is None else False
 
         if image_path is not None and save_path is not None:
             # Save features
@@ -85,29 +84,41 @@ if __name__ == '__main__':
             print('-------Running Batch Job-------')
             # Feature computation and K-Means clustering in batch
 
-            im_list = glob.glob(os.path.join(folder_path, '*' + ext))
+            im_list = sorted(glob.glob(os.path.join(folder_path, '*' + ext)), key=os.path.getsize)
             count = 0
             print('# of images: %r' %(len(im_list)))
+            # if the image processed is small, combine with the next image in queue
+            small_image = False
             for im_p in im_list:
-                if count % 10 == 0: print('Processed %r / %r' %(count, len(im_list)))
+                if count % 5 == 0: print('Processed %r / %r' %(count, len(im_list)))
                 count += 1
                 # get filename without extension
                 base = os.path.basename(im_p)
                 path_noextend = os.path.splitext(base)[0]
                 fname = path_noextend  + '_feat.pkl'
                 filename = os.path.join(save_path, fname)
-                if ext != '.mat':
-                    result = get_feat_from_image(im_p, save_flag, word_size, save_path=filename)
+                if small_image: temp = result
+                if os.path.exists(filename):
+                    result = pickle.load(open(filename, 'rb'))
                 else:
-                    im, m = load_mat(im_p)
-                    result = get_feat_from_image(None, save_flag, word_size, image=im)
-                    pickle.dump(result, open(filename, 'wb'))
+                    if ext != '.mat':
+                        result = get_feat_from_image(im_p, save_flag, word_size, save_path=filename)
+                    else:
+                        im, m = load_mat(im_p)
+                        result = get_feat_from_image(None, save_flag, word_size, image=im)
+                        pickle.dump(result, open(filename, 'wb'))
+                if small_image:
+                    result = np.concatenate((result, temp), axis=0)
+                    small_image = False
+                if result.shape[0] < 200: small_image=True
+                else: small_image = False
                 # Online-Kmeans
-                if first_image:
+                if kmeans is None and (not small_image):
+                    print(result.shape)
                     kmeans = construct_kmeans(result)
-                else:
+                    assert kmeans is not None
+                elif kmeans is not None and (not small_image):
                     kmeans = partial_fit_k_means(result, kmeans)
-                    first_image = False
                     assert kmeans is not None, "kmeans construction/update invalid"
 
             hcluster = h_cluster(kmeans, final_size=dict_size)
@@ -145,7 +156,15 @@ if __name__ == '__main__':
             path_noextend = os.path.splitext(base)[0]
             caseID = int(''.join(filter(str.isdigit, path_noextend.split('_')[0])))
             feat_outpath = os.path.join(save_path, path_noextend + '_feat_bag.pkl')
-            bag_feat, bags = get_hist_from_image(image_path, loaded_kmeans,loaded_hcluster, dict_size, word_size, bag_size, overlap, save_flag, feat_outpath)
+            if not os.path.exists(feat_outpath):
+                bag_feat, bags = get_hist_from_image(image_path, loaded_kmeans,loaded_hcluster, dict_size, word_size, bag_size, overlap, save_flag, feat_outpath)
+            else:
+                if image_mat != 'mat':
+                    image = cv2.imread(image_path)
+                else:
+                    image,_ = load_mat(image_path)
+                bags = bag(image)
+                bag_feat = pickle.load(open(feat_outpath, 'rb'))
             if csv_file is not None:
                 dict_bbox = preprocess_roi_csv(csv_file)
                 assert dict_bbox.get(caseID) is not None, "case ID does not exist: check image name convention"
