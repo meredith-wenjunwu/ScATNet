@@ -207,7 +207,7 @@ def sample_from_roi_mat(mat_filename):
     return bags, result, [pos_count, neg_count]
 
 
-def bbox_to_bags_ind_in_wsi(bboxes, [h, w], window_size, overlap):
+def bbox_to_bags_ind_in_wsi(bboxes, WSI_size, window_size, overlap):
     """
         This function calculates the ROI index in terms of window(bag/word)
         sizes (i.e. given the size of WSI, give out a list with the index of
@@ -216,30 +216,26 @@ def bbox_to_bags_ind_in_wsi(bboxes, [h, w], window_size, overlap):
         Args:
             bboxes (List(n)): list of bounding boxes of a given image
             [h (int), w (int)]: size of the WSI (height, width)
-            window size (int): size of word/bags or any window of interest 
+            window size (int): size of word/bags or any window of interest
             (usually
             3600 for bags and 120 for words)
             overlap (int): overlapping pixel in window
     """
     # assumption is that we won't receive anything on the border where bags
     # can't fit
+    h, w = WSI_size
     result = set()
-    num_bag_w = math.floor((w - overlap) / (window_size - overlap))
+    num_bag_w = int(math.floor((w - overlap) / (window_size - overlap)))
     # Bounding box(int[]): [h_low, h_high, w_low, w_high]
     for h_low, h_high, w_low, w_high in bboxes:
         assert h_high <= h and w_high <= w, "Size incompatible"
-        ind_w_low = max(math.ceil((w_low - window_size) / (window_size -
-           overlap)), 0)
-        ind_w_high = max(math.ceil((w_high - window_size) / (window_size -
-           overlap)), 0)
-        ind h_low = max(math.ceil(h_low - window_size) / (window_size -
-           overlap), 0)
-        ind_h_high = max(math.ceil(h_high - window_size) / (window_size -
-            overlap), 0)
+        ind_w_low = int(max(math.ceil((w_low - window_size) / (window_size - overlap)), 0))
+        ind_w_high = int(max(math.ceil((w_high - window_size) / (window_size - overlap)), 0))
+        ind_h_low = int(max(math.ceil((h_low - window_size) / (window_size - overlap)), 0))
+        ind_h_high = int(max(math.ceil((h_high - window_size) / (window_size - overlap)), 0))
         for i in range(h_low, h_high+1):
-            result.update(range(h_low * num_bag_w + w_low, h_low * num_bag_w
-                + w_high + 1))
-    return list(result)
+            result.update(range(ind_h_low * num_bag_w + ind_w_low, ind_h_low * num_bag_w + ind_w_high + 1))
+    return np.sort(list(result))
 
 
 
@@ -269,7 +265,7 @@ def sample_negative_samples(num_of_neg_samples, bboxes, bags):
             intersect_col = sample_col.intersection(roi_col)
 
             num_intersected_pixel += len(intersect_col) * len(intersect_row)
-            if num_intersected_pixel <= 0.2 * size
+            if num_intersected_pixel <= 0.2 * size:
                 result[num_of_neg_samples - count_left] = i
                 count_left -= 1
     return bags, result
