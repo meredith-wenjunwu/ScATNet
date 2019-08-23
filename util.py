@@ -92,6 +92,26 @@ def preprocess_roi_csv(csv_file):
         i += 1
     return result
 
+def preprocess_roi_size_csv(csv_file):
+    f = pd.read_csv(csv_file)
+    caseID = f['Case ID']
+    H = f['H']
+    W = f['W']
+
+    result = {}
+    i = 0
+    while i < len(caseID):
+        # row_up, row_down, col_left, col_right
+
+        height = H[i]
+        width = W[i]
+        if bb_l is None:
+            result[caseID[i]] = [[height, width]]
+        else:
+            result[caseID[i]].append([height, width])
+        i += 1
+    return result
+
 
 def calculate_label_from_mask(mask, size=3600, overlap_pixel=2400):
     bags = Bag(mask, size=size, overlap_pixel=overlap_pixel)
@@ -188,84 +208,200 @@ def cross_valid_index(positives, negatives, n_splits=10):
     return train, train_L, test, test_L
 
 
-def sample_from_roi_mat(mat_filename):
-    im, M = load_mat(mat_filename)
-    words = Word(im)
-    bags = Bag(words.img, padded=False)
-    result = np.zeros(len(bags))
-    pos_count = 0
-    neg_count = 0
-    for bag, i in bags:
-        bbox = bags.bound_box(i)
-        r, c = bag.shape
-        size = r * c
-        if np.sum(M[bbox[0]:bbox[1], bbox[2]:bbox[3], :]) / size >= 0.7:
-            result[i] = 1
-            pos_count += 1
+class ROI_Sampler:
+
+    def __init__(roi_mat, caseID, window_size,
+                 overlap, outdir, roi_csv=None, roi_size_csv=None,
+                 dict_bbox=None, dict_roi_size=None):
+        assert os.path.exists(roi_mat), "ROI mat file do not exist"
+        
+        if not os.path.exists(outdir):
+            os.mkdir(outdir)
+        if dict_bbox is None:
+            assert os.path.exists(roi_csv), "ROI csv file do not exist"
+            self.dict_bbox = preprocess_roi_csv(roi_csv)
+        if dict_roi_size is None:
+            assert os.path.exists(roi_size_csv), "ROI size csv file do not exist"
+            self.dict_roi_size = preprocess_roi_size_csv(roi_size_csv)
+        self.bboxes = dict_bbox[caseID]
+        self.wsi_size = dict_roi_size[caseID]
+        self.window_size = window_size
+        self.overlap = overlap
+        self.bags = None
+        self.pos_bags = None
+        self.count = None
+        self.pos_count = None
+        self.neg_count = None
+        self.outdir = outdir
+
+    def __sample_pos():
+        self.bags, self.pos_bags, self.count = self.__sample_from_ROI_mat(roi_mat)
+        self.pos_count, self.neg_count = self.count
+        return self.bags, self.pos_bags, self.count
+
+    def __sample_neg(neg_count=None, mode=None):
+        mode_type = ['rand', 'relevant']
+        assert mode in mode_type, "Enter valid mode type"
+
+        if not neg_count:
+            neg_count = self.neg_count
+            assert self.neg_count is not None, "Need to run sample_pos first"
+        if mode == 'rand':
+            bags = Bag(h=self.WSI_size[0], w=self.WSI_size,
+                       size=self.window_size, overlap_pixel=self.overlap,
+                       padded=False)
+            self.neg_bags = self.__sample_negative_samples_rand(neg_count,
+                                                                self.bboxes,
+                                                                bags)
         else:
-            neg_count += 1
-    return bags, result, [pos_count, neg_count]
-
-
-def bbox_to_bags_ind_in_wsi(bboxes, WSI_size, window_size, overlap):
-    """
-        This function calculates the ROI index in terms of window(bag/word)
-        sizes (i.e. given the size of WSI, give out a list with the index of
-        bags that are contained in the ROI)
-
-        Args:
-            bboxes (List(n)): list of bounding boxes of a given image
-            [h (int), w (int)]: size of the WSI (height, width)
-            window size (int): size of word/bags or any window of interest
-            (usually
-            3600 for bags and 120 for words)
-            overlap (int): overlapping pixel in window
-    """
-    # assumption is that we won't receive anything on the border where bags
-    # can't fit
-    h, w = WSI_size
-    result = set()
-    num_bag_w = int(math.floor((w - overlap) / (window_size - overlap)))
-    # Bounding box(int[]): [h_low, h_high, w_low, w_high]
-    for h_low, h_high, w_low, w_high in bboxes:
-        assert h_high <= h and w_high <= w, "Size incompatible"
-        ind_w_low = int(max(math.ceil((w_low - window_size) / (window_size - overlap)), 0))
-        ind_w_high = int(max(math.ceil((w_high - window_size) / (window_size - overlap)), 0))
-        ind_h_low = int(max(math.ceil((h_low - window_size) / (window_size - overlap)), 0))
-        ind_h_high = int(max(math.ceil((h_high - window_size) / (window_size - overlap)), 0))
-        for i in range(h_low, h_high+1):
-            result.update(range(ind_h_low * num_bag_w + ind_w_low, ind_h_low * num_bag_w + ind_w_high + 1))
-    return np.sort(list(result))
+            pos_ind = self.__bbox_to_bags_ind_in_wsi(bboxes, self.wsi_size,
+                                                     self.window_size,
+                                                     self.overlap)
 
 
 
 
-def sample_negative_samples(num_of_neg_samples, bboxes, bags):
-    # need to sample negative samples next to the ROI
-    count_left = num_of_neg_samples
-    ind_list = list(range(len(bags)))
-    bbox = biggest_bbox(bboxes)
-    result = np.zeros(num_of_neg_samples)
-    while count_left > 0:
-        i = np.random.choice(ind_list)
-        ind_list.remove(i)
-        num_intersected_pixel = 0
+    def __sample_from_ROI_mat(mat_filename):
+        im, M = load_mat(mat_filename)
+        words = Word(im)
+        bags = Bag(words.img, padded=False)
+        result = np.zeros(len(bags))
+        pos_count = 0
+        neg_count = 0
+        for bag, i in bags:
+            bbox = bags.bound_box(i)
+            r, c = bag.shape
+            size = r * c
+            if np.sum(M[bbox[0]:bbox[1], bbox[2]:bbox[3], :]) / size >= 0.7:
+                result[i] = 1
+                pos_count += 1
+            else:
+                neg_count += 1
+        return bags, result, [pos_count, neg_count]
 
-        # if bb[0] >= bbox[0] and bb[1] <= bbox[1] and bb[2] >= bbox[2] and bb[3] <= bbox[3]:
-        # if row overlaps
-        bb = bags.bound_box(i)
-        roi_row = range(bbox[0], bbox[1])
-        sample_row = set(range(bb[0], bb[1]))
-        intersect_row = sample_row.intersection(roi_row)
+    def __bbox_to_bags_ind_in_wsi(bboxes, WSI_size, window_size, overlap):
+        """
+            This function calculates the ROI index in terms of window(bag/word)
+            sizes (i.e. given the size of WSI, give out a list with the index of
+            bags that are contained in the ROI)
 
-        if len(intersect_list) > 0:
-            # if col overlaps
-            roi_col = range(bbox[2], bbox[3])
-            sample_col = set(range(bb[2], bb[3]))
-            intersect_col = sample_col.intersection(roi_col)
+            Args:
+                bboxes (List(n)): list of bounding boxes of a given image
+                WSI_size [h (int), w (int)]: size of the WSI (height, width)
+                window size (int): size of word/bags or any window of interest
+                                  (usually
+                                  3600 for bags and 120 for words)
+                overlap (int): overlapping pixel in window
 
-            num_intersected_pixel += len(intersect_col) * len(intersect_row)
-            if num_intersected_pixel <= 0.2 * size:
-                result[num_of_neg_samples - count_left] = i
-                count_left -= 1
-    return bags, result
+            Returns:
+                result (List(m)): list with the index of bags that are contained in
+                the ROI
+        """
+        # assumption is that we won't receive anything on the border where bags
+        # can't fit
+        h, w = WSI_size
+        result = set()
+        num_bag_w = int(math.floor((w - overlap) / (window_size - overlap)))
+        # Bounding box(int[]): [h_low, h_high, w_low, w_high]
+        for h_low, h_high, w_low, w_high in bboxes:
+            assert h_high <= h and w_high <= w, "Size incompatible"
+            ind_w_low = int(max(math.ceil((w_low - window_size) / (window_size - overlap)), 0))
+            ind_w_high = int(max(math.ceil((w_high - window_size) / (window_size - overlap)), 0))
+            ind_h_low = int(max(math.ceil((h_low - window_size) / (window_size - overlap)), 0))
+            ind_h_high = int(max(math.ceil((h_high - window_size) / (window_size - overlap)), 0))
+            for i in range(h_low, h_high+1):
+                result.update(range(ind_h_low * num_bag_w + ind_w_low, ind_h_low * num_bag_w + ind_w_high + 1))
+        return np.sort(list(result))
+
+
+    def __sample_negative_samples_relevant(num_of_neg_samples,
+                                           WSI_size, roi_bags,
+                                           window_size, overlap):
+        """
+            This function calculates sample negative samples next to the ROI
+
+            Args:
+                bboxes (List(n)): list of bounding boxes of a given image
+                WSI_size [h (int), w (int)]: size of the WSI (height, width)
+                roi_bags (List(m)): list with the index of bags that are contained
+                                    in the ROI (Result from
+                                    bbox_to_bags_ind_in_wsi)
+                window size (int): size of word/bags or any window of interest
+                                  (usually
+                                  3600 for bags and 120 for words)
+                overlap (int): overlapping pixel in window
+
+            Returns:
+                result (List(m)): List of index of sampled negative bags
+        """
+        assert roi_bags is not None and len(roi_bags) > 0, "invalid roi bags"
+        h, w = WSI_size
+        num_bag_w = int(math.floor((w - overlap) / (window_size - overlap)))
+        length = math.floor(math.floor((h - overlap) / (window_size - overlap)) *
+           math.floor((w - overlap) / (window_size - overlap)))
+        count_left = num_of_neg_samples
+        result = set()
+        ind_list = list(range(length))
+
+        i = 0
+
+        while count_left > 0:
+            # goes clockwise to sample bags
+            ind = roi_bags[i]
+            neigh = self.__ROI_neighbor_not_roi(ind, num_bag_w, roi_bags,
+                                                length)
+            count_left -= len(neigh)
+            result.update(neigh)
+            roi_bags += neigh
+            i += 1
+            assert i < len(roi_bags), "ROI too big, not enough negative sample"
+
+
+
+
+
+    def __checkROI(idx, length, roi_bags):
+        return idx >= 0 and idx < length and idx not in roi_bags
+
+    def __ROI_neighbor_not_roi(idx, num_bag_w, roi_bags, length):
+        result = []
+        if self.__checkROI(idx + 1, length, roi_bags):
+            result += [idx + 1]
+        if self.__checkROI(idx - 1, length, roi_bags):
+            result += [idx - 1]
+        if self.__checkROI(idx - num_bag_w, length, roi_bags):
+            result += [idx - num_bag_w]
+        if self.__checkROI(idx + num_bag_w, length, roi_bags):
+            result += [idx + num_bag_w]
+        return result, scanned
+
+
+
+    def __sample_negative_samples_rand(num_of_neg_samples, bboxes, bags):
+        count_left = num_of_neg_samples
+        ind_list = list(range(len(bags)))
+        bbox = biggest_bbox(bboxes)
+        result = np.zeros(num_of_neg_samples)
+        while count_left > 0:
+            i = np.random.choice(ind_list)
+            ind_list.remove(i)
+            num_intersected_pixel = 0
+
+            # if bb[0] >= bbox[0] and bb[1] <= bbox[1] and bb[2] >= bbox[2] and bb[3] <= bbox[3]:
+            # if row overlaps
+            bb = bags.bound_box(i)
+            roi_row = range(bbox[0], bbox[1])
+            sample_row = set(range(bb[0], bb[1]))
+            intersect_row = sample_row.intersection(roi_row)
+
+            if len(intersect_list) > 0:
+                # if col overlaps
+                roi_col = range(bbox[2], bbox[3])
+                sample_col = set(range(bb[2], bb[3]))
+                intersect_col = sample_col.intersection(roi_col)
+
+                num_intersected_pixel += len(intersect_col) * len(intersect_row)
+                if num_intersected_pixel <= 0.2 * size:
+                    result[num_of_neg_samples - count_left] = i
+                    count_left -= 1
+        return bags[result
