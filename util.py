@@ -105,10 +105,11 @@ def preprocess_roi_size_csv(csv_file):
 
         height = H[i]
         width = W[i]
+        bb_l = result.get(caseID[i])
         if bb_l is None:
-            result[caseID[i]] = [[height, width]]
+            result[int(caseID[i])] = [[height, width]]
         else:
-            result[caseID[i]].append([height, width])
+            result[int(caseID[i])].append([height, width])
         i += 1
     return result
 
@@ -172,7 +173,7 @@ def biggest_bbox(bbox_list):
     return [row_low, row_high, col_low, col_high]
 
 
-def crop_saveroi(image_folder, dict_bbox, appendix='.jpg'):
+def crop_saveroi_batch(image_folder, dict_bbox, appendix='.jpg'):
     f_ls = glob.glob(os.path.join(image_folder, '*.tif'))
     for f in f_ls:
         base = os.path.basename(f)
@@ -186,9 +187,15 @@ def crop_saveroi(image_folder, dict_bbox, appendix='.jpg'):
             size_c = bbox_final[3] - bbox_final[2]
             args = 'convert ' + f + ' -crop ' + str(size_c) + 'x' + str(
                 size_r) + '+' + str(bbox_final[2]) + '+' + str(bbox_final[0]) + ' ' + outname
-            print(args)
+            #print(args)
             os.system(args)
 
+def crop_bbox_single(image, bbox, outname):
+    size_r = bbox_final[1] - bbox_final[0]
+    size_c = bbox_final[3] - bbox_final[2]
+    args = 'convert ' + image + ' -crop ' + str(size_c) + 'x' + str(size_r) + '+' + str(bbox_final[2]) + '+' + str(bbox_final[0]) + ' ' + outname
+    print(args)
+    os.system(args)
 
 def cross_valid_index(positives, negatives, n_splits=10):
     kf = KFold(n_splits=ns)
@@ -210,11 +217,12 @@ def cross_valid_index(positives, negatives, n_splits=10):
 
 class ROI_Sampler:
 
-    def __init__(roi_mat, caseID, window_size,
-                 overlap, outdir, roi_csv=None, roi_size_csv=None,
+    def __init__(self, roi_mat, caseID, window_size,
+                 overlap, outdir, wsi_path=None,
+                 roi_csv=None, roi_size_csv=None,
                  dict_bbox=None, dict_roi_size=None):
         assert os.path.exists(roi_mat), "ROI mat file do not exist"
-        
+        self.roi_mat = roi_mat
         if not os.path.exists(outdir):
             os.mkdir(outdir)
         if dict_bbox is None:
@@ -223,8 +231,9 @@ class ROI_Sampler:
         if dict_roi_size is None:
             assert os.path.exists(roi_size_csv), "ROI size csv file do not exist"
             self.dict_roi_size = preprocess_roi_size_csv(roi_size_csv)
-        self.bboxes = dict_bbox[caseID]
-        self.wsi_size = dict_roi_size[caseID]
+        self.bboxes = self.dict_bbox[caseID]
+        self.wsi_size = self.dict_roi_size[caseID]
+        self.wsi_path = wsi_path
         self.window_size = window_size
         self.overlap = overlap
         self.bags = None
@@ -234,12 +243,16 @@ class ROI_Sampler:
         self.neg_count = None
         self.outdir = outdir
 
-    def __sample_pos():
-        self.bags, self.pos_bags, self.count = self.__sample_from_ROI_mat(roi_mat)
+    def sample_pos(self):
+        self.negdir = os.path.join(self.outdir, 'neg')
+        if not os.path.exists(self.negdir): os.mkdir(self.negdir)
+        self.posdir = os.path.join(self.outdir, 'pos')
+        if not os.path.exists(self.posdir): os.mkdir(self.posdir)
+        self.bags, self.pos_bags, self.count = self._sample_from_ROI_mat(self.roi_mat)
         self.pos_count, self.neg_count = self.count
-        return self.bags, self.pos_bags, self.count
 
-    def __sample_neg(neg_count=None, mode=None):
+
+    def sample_neg(self, neg_count=None, mode=None):
         mode_type = ['rand', 'relevant']
         assert mode in mode_type, "Enter valid mode type"
 
@@ -250,36 +263,45 @@ class ROI_Sampler:
             bags = Bag(h=self.WSI_size[0], w=self.WSI_size,
                        size=self.window_size, overlap_pixel=self.overlap,
                        padded=False)
-            self.neg_bags = self.__sample_negative_samples_rand(neg_count,
+            self.neg_bags = self._sample_negative_samples_rand(neg_count,
                                                                 self.bboxes,
                                                                 bags)
         else:
-            pos_ind = self.__bbox_to_bags_ind_in_wsi(bboxes, self.wsi_size,
+            pos_ind = self._bbox_to_bags_ind_in_wsi(bboxes, self.wsi_size,
                                                      self.window_size,
                                                      self.overlap)
+            self.neg_bags = self.sample_negative_samples_relevant(num_of_neg_samples,
+                                                                  WSI_size, pos_ind,
+                                                                  window_size, overlap)
+            if self.wsi_path is not None:
+                # need to crop roi and save in negdir
+                for ind in self.neg_bags:
+                    bbox = bags.bound_box(ind)
 
 
 
 
-    def __sample_from_ROI_mat(mat_filename):
+    def _sample_from_ROI_mat(self, mat_filename):
         im, M = load_mat(mat_filename)
-        words = Word(im)
-        bags = Bag(words.img, padded=False)
+        bags = Bag(im, padded=False)
         result = np.zeros(len(bags))
         pos_count = 0
         neg_count = 0
         for bag, i in bags:
             bbox = bags.bound_box(i)
-            r, c = bag.shape
+            r, c, _ = bag.shape
             size = r * c
-            if np.sum(M[bbox[0]:bbox[1], bbox[2]:bbox[3], :]) / size >= 0.7:
+            if np.sum(M[bbox[0]:bbox[1], bbox[2]:bbox[3]]) / size >= 0.7:
                 result[i] = 1
                 pos_count += 1
+                cv2.imwrite(os.path.join(self.posdir, str(pos_count) + '.tif'))
             else:
                 neg_count += 1
+                cv2.imwrite(os.path.join(self.negdir, str(neg_count) + '.tif'))
+
         return bags, result, [pos_count, neg_count]
 
-    def __bbox_to_bags_ind_in_wsi(bboxes, WSI_size, window_size, overlap):
+    def _bbox_to_bags_ind_in_wsi(self, bboxes, WSI_size, window_size, overlap):
         """
             This function calculates the ROI index in terms of window(bag/word)
             sizes (i.e. given the size of WSI, give out a list with the index of
@@ -314,7 +336,7 @@ class ROI_Sampler:
         return np.sort(list(result))
 
 
-    def __sample_negative_samples_relevant(num_of_neg_samples,
+    def _sample_negative_samples_relevant(self, num_of_neg_samples,
                                            WSI_size, roi_bags,
                                            window_size, overlap):
         """
@@ -348,7 +370,7 @@ class ROI_Sampler:
         while count_left > 0:
             # goes clockwise to sample bags
             ind = roi_bags[i]
-            neigh = self.__ROI_neighbor_not_roi(ind, num_bag_w, roi_bags,
+            neigh = self._ROI_neighbor_not_roi(ind, num_bag_w, roi_bags,
                                                 length)
             count_left -= len(neigh)
             result.update(neigh)
@@ -356,28 +378,28 @@ class ROI_Sampler:
             i += 1
             assert i < len(roi_bags), "ROI too big, not enough negative sample"
 
+        return list(result)
 
 
 
-
-    def __checkROI(idx, length, roi_bags):
+    def _checkROI(self, idx, length, roi_bags):
         return idx >= 0 and idx < length and idx not in roi_bags
 
-    def __ROI_neighbor_not_roi(idx, num_bag_w, roi_bags, length):
+    def _ROI_neighbor_not_roi(self, idx, num_bag_w, roi_bags, length):
         result = []
-        if self.__checkROI(idx + 1, length, roi_bags):
+        if self._checkROI(idx + 1, length, roi_bags):
             result += [idx + 1]
-        if self.__checkROI(idx - 1, length, roi_bags):
+        if self._checkROI(idx - 1, length, roi_bags):
             result += [idx - 1]
-        if self.__checkROI(idx - num_bag_w, length, roi_bags):
+        if self._checkROI(idx - num_bag_w, length, roi_bags):
             result += [idx - num_bag_w]
-        if self.__checkROI(idx + num_bag_w, length, roi_bags):
+        if self._checkROI(idx + num_bag_w, length, roi_bags):
             result += [idx + num_bag_w]
         return result, scanned
 
 
 
-    def __sample_negative_samples_rand(num_of_neg_samples, bboxes, bags):
+    def _sample_negative_samples_rand(self, num_of_neg_samples, bboxes, bags):
         count_left = num_of_neg_samples
         ind_list = list(range(len(bags)))
         bbox = biggest_bbox(bboxes)
@@ -404,4 +426,4 @@ class ROI_Sampler:
                 if num_intersected_pixel <= 0.2 * size:
                     result[num_of_neg_samples - count_left] = i
                     count_left -= 1
-        return bags[result
+        return bags[result]
