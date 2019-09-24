@@ -16,7 +16,7 @@ import cv2
 import math
 import h5py
 import pickle
-import pandas as pd
+import csv
 from sklearn.model_selection import KFold
 
 
@@ -69,27 +69,52 @@ def load_mat(filename):
 
 
 def preprocess_roi_csv(csv_file):
-    f = pd.read_csv(csv_file)
-    caseID = f['Case ID']
-    Y = f['Y']
-    X = f['X']
-
-    height = f['Height']
-    width = f['Width']
+    header = None
+    case=y=x=width=heigh=0
 
     result = {}
-
-    i = 0
-    while i < len(caseID):
-        # row_up, row_down, col_left, col_right
-
-        bbox = [Y[i], Y[i] + height[i], X[i], X[i] + width[i]]
-        bb_l = result.get(caseID[i])
-        if bb_l is None:
-            result[caseID[i]] = [bbox]
-        else:
-            result[caseID[i]].append(bbox)
-        i += 1
+    with open(csv_file, newline='') as f:
+        f.seek(0)
+        reader = csv.reader(f)
+        i = 0
+        for row in reader:
+            if i == 0:
+                header = row
+                assert 'Case ID' in header, "No matching column with name: Case ID"
+                assert 'Y' in header, "No matching column with name: Y"
+                assert 'X' in header, "No matching column with name: X"
+                assert 'Width' in header, "No matching column with name: Width"
+                assert 'Height' in header, "No matching column with name: Height"
+                case = header.index('Case ID')
+                y = header.index('Y')
+                x = header.index('X')
+                width = header.index('Width')
+                height = header.index('Height')
+            if i > 0:
+                try:
+                    Y = int(row[y])
+                except ValueError:
+                    Y = int(float(row[y]))
+                try:
+                    X = int(row[x])
+                except ValueError:
+                   X = int(float(row[x]))
+                c = int(row[case])
+                try:
+                    w = int(row[width])
+                except ValueError:
+                    w = int(float(row[width]))
+                try:
+                    h = int(row[height])
+                except ValueError:
+                    h = int(float(row[height]))
+                bbox = [Y, Y+h, X, X+w]
+                bb_l = result.get(c)
+                if bb_l is None:
+                    result[c] = [bbox]
+                else:
+                    result[c].append(bbox)
+            i += 1
     return result
 
 def preprocess_roi_size_csv(csv_file):
@@ -107,9 +132,7 @@ def preprocess_roi_size_csv(csv_file):
         width = W[i]
         bb_l = result.get(caseID[i])
         if bb_l is None:
-            result[int(caseID[i])] = [[height, width]]
-        else:
-            result[int(caseID[i])].append([height, width])
+            result[int(caseID[i])] = [height, width]
         i += 1
     return result
 
@@ -191,9 +214,9 @@ def crop_saveroi_batch(image_folder, dict_bbox, appendix='.jpg'):
             os.system(args)
 
 def crop_bbox_single(image, bbox, outname):
-    size_r = bbox_final[1] - bbox_final[0]
-    size_c = bbox_final[3] - bbox_final[2]
-    args = 'convert ' + image + ' -crop ' + str(size_c) + 'x' + str(size_r) + '+' + str(bbox_final[2]) + '+' + str(bbox_final[0]) + ' ' + outname
+    size_r = bbox[1] - bbox[0]
+    size_c = bbox[3] - bbox[2]
+    args = 'convert ' + image + ' -crop ' + str(size_c) + 'x' + str(size_r) + '+' + str(bbox[2]) + '+' + str(bbox[0]) + ' ' + outname
     print(args)
     os.system(args)
 
@@ -267,18 +290,19 @@ class ROI_Sampler:
                                                                 self.bboxes,
                                                                 bags)
         else:
-            pos_ind = self._bbox_to_bags_ind_in_wsi(bboxes, self.wsi_size,
+            pos_ind = self._bbox_to_bags_ind_in_wsi(self.bboxes, self.wsi_size,
                                                      self.window_size,
                                                      self.overlap)
-            self.neg_bags = self.sample_negative_samples_relevant(num_of_neg_samples,
+            self.neg_bags = self._sample_negative_samples_relevant(neg_count,
                                                                   WSI_size, pos_ind,
                                                                   window_size, overlap)
             if self.wsi_path is not None:
                 # need to crop roi and save in negdir
                 for ind in self.neg_bags:
                     bbox = bags.bound_box(ind)
-
-
+                    outname=str(caseID) + '_' + str(ind) + '.tif'
+                    outname = os.path.join(self.negdir, outname)
+                    crop_bbox_single(self.wsi_path, bbox, outname)
 
 
     def _sample_from_ROI_mat(self, mat_filename):
@@ -291,13 +315,14 @@ class ROI_Sampler:
             bbox = bags.bound_box(i)
             r, c, _ = bag.shape
             size = r * c
+            #print(size)
             if np.sum(M[bbox[0]:bbox[1], bbox[2]:bbox[3]]) / size >= 0.7:
                 result[i] = 1
                 pos_count += 1
-                cv2.imwrite(os.path.join(self.posdir, str(pos_count) + '.tif'))
+                cv2.imwrite(os.path.join(self.posdir, str(pos_count) + '.tif'), bag)
             else:
                 neg_count += 1
-                cv2.imwrite(os.path.join(self.negdir, str(neg_count) + '.tif'))
+                cv2.imwrite(os.path.join(self.negdir, str(neg_count) + '.tif'), bag)
 
         return bags, result, [pos_count, neg_count]
 

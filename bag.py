@@ -93,7 +93,7 @@ class Bag:
            self.overlap_pixel))
         w = math.floor(idx % (num_bag_w) * (self.size - self.overlap_pixel))
 
-        return [h, h + size, w, w + size]
+        return [h, h + self.size, w, w + self.size]
 
     def __getitem__(self, idx):
         """
