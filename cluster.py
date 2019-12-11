@@ -66,6 +66,6 @@ def predict_kmeans(feat, kmeans, h_cluster=None):
     Kx = kmeans.cluster_centers_
     K_mapping = kmeans.predict(feat)
     H_mapping = h_cluster.fit_predict(Kx)
-    print(H_mapping)
+    #print(H_mapping)
     return [H_mapping[cluster] for cluster in K_mapping]
 

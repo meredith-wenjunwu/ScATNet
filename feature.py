@@ -5,7 +5,7 @@ from multiprocessing.pool import ThreadPool
 from skimage.color import rgb2gray, rgb2lab
 import os
 import cv2
-
+from normalizeStaining import normalizeStaining
 
 
 def calculate_HE(img, idx=None, save=False, path=None):
@@ -33,14 +33,16 @@ def calculate_HE(img, idx=None, save=False, path=None):
     M[np.isnan(M)] = 0
 
     he = np.matmul(img, M.T)
+
+
     if save and path and idx is not None:
-        h_channel = he[:,:,0]
-        e_channel = he[:,:,1]
-        p = path + '_' + str(idx) +  '_H.png'
-        cv2.imwrite(p, h_channel)
-        p = path + '_' + str(idx) +  '_E.png'
-        cv2.imwrite(p, e_channel)
-    return he
+        saveFile = path + '_' + str(idx)
+    else:
+        saveFile = None
+    
+    Inorm, H, E = normalizeStaining(img, saveFile=saveFile)
+
+    return np.concatenate((H, E), axis=2)
 
 
 def calculate_LBP(img):
@@ -59,17 +61,13 @@ def calculate_LBP(img):
     """
     
     h, w, d = img.shape
+
+    output = np.zeros([h, w, d])
     
-    if d >= 3:
-        lbp1 = feature.local_binary_pattern(img[:,:,0], 8, 1)
-        lbp1 = lbp1.reshape(h, w, 1)
-        lbp2 = feature.local_binary_pattern(img[:,:,1], 8, 1)
-        lbp2 =lbp2.reshape(h, w, 1)
-        lbp = np.concatenate((lbp1, lbp2), axis=2)
-    else:
-        lbp = feature.local_binary_pattern(img, 8, 1)
-        lbp = lbp.reshape(h, w, 1)
-    return lbp
+    for i in range(d):
+        output[:,:,i] = feature.local_binary_pattern(img[:,:, i], 8, 1)
+
+    return output
     
 def calculate_feature(img, idx=None, save=False, path=None):
     """function that calculates features from an input image.
@@ -85,13 +83,14 @@ def calculate_feature(img, idx=None, save=False, path=None):
 
     """
 
-    img = calculate_HE(img, idx, save, path)
-    
-    lbp = calculate_LBP(img)
+    HE = calculate_HE(img, idx, save, path)
+    h, w, d = img.shape
+
+    lbp = calculate_LBP(HE)
+
     lab = rgb2lab(img)
+
     all_features = np.concatenate([lbp, lab], axis=2)
-    
-    
     return all_features
 
 def get_histogram(features, nbins=64):
@@ -119,4 +118,7 @@ def get_histogram(features, nbins=64):
     
     
     return result
-    
+
+def get_histogram_cluster(cluster_words, dict_size=40):
+    hist, edges_ = np.histogram(cluster_words, range=(0, 40), bins=dict_size)
+    return hist

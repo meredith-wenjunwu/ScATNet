@@ -16,18 +16,32 @@ class Bag:
 
     """
 
-    def padding(self, img, window_size):
-        h, w, _ = img.shape
-        h_pad = window_size - h % window_size
-        w_pad = window_size - w % window_size
-        top = math.floor(h_pad / 2)
-        bottom = math.ceil(h_pad / 2)
-        left = math.floor(w_pad / 2)
-        right = math.ceil(w_pad / 2)
-
-        padded = cv2.copyMakeBorder(
-            img, top, bottom, left, right, cv2.BORDER_REFLECT)
-        return padded
+    def padding(self, img, window_size, h=None, w=None):
+        if img is not None:
+            h, w, _ = img.shape
+        assert h is not None
+        assert w is not None
+        if h % window_size != 0:
+            h_pad = window_size - h % window_size
+        else:
+            h_pad = 0
+        if w % window_size != 0:
+            w_pad = window_size - w % window_size
+        else:
+            w_pad = 0
+        self.top = math.floor(h_pad / 2)
+        self.bottom = math.ceil(h_pad / 2)
+        self.left = math.floor(w_pad / 2)
+        self.right = math.ceil(w_pad / 2)
+        if img is not None:
+            padded = cv2.copyMakeBorder(
+                img, self.top, self.bottom, self.left, self.right,
+                cv2.BORDER_REFLECT)
+            self.h, self.w, _ = padded.shape
+            return padded
+        self.h = h + self.top + self.bottom
+        self.w = w + self.left + self.right
+        return img
 
     def __init__(self, img=None, h=None, w=None, size=3600, overlap_pixel=2400,
         padded=True):
@@ -48,24 +62,28 @@ class Bag:
 
         # padded = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_REFLECT)
         # h,w,_ = padded.shape
-
+        self.h = None
+        self.w = None
         if padded:
-            img = self.padding(img, size)
-            assert h % size == 0, "height after padding is not divisible by 3600"
-            assert w % size == 0, "width after padding is not divisible by 3600"
+            img = self.padding(img, size, h, w)
+            assert self.h % size == 0, "height after padding is not divisible by 3600"
+            assert self.w % size == 0, "width after padding is not divisible by 3600"
         if img is not None:
             h, w, _ = img.shape
+            self.h = h
+            self.w = w
         else:
-            assert h is not None, "Need to provide height when image is absent"
-            assert w is not None, "Need to provide width when image is absent"
+            if not padded:
+                assert h is not None, "Need to provide height when image is absent"
+                assert w is not None, "Need to provide width when image is absent"
+                self.h = h
+                self.w = w
         self.img = img
-        self.h = h
-        self.w = w
         self.overlap_pixel = overlap_pixel
         self.size = size
-        self.length = math.floor(math.floor((self.h - self.overlap_pixel) /
-            (self.size - self.overlap_pixel)) * math.floor(
-        (self.w - self.overlap_pixel) / (self.size - self.overlap_pixel)))
+        self.length = math.floor(max(math.floor((self.h - self.overlap_pixel) /
+            (self.size - self.overlap_pixel)), 0) * max(math.floor((self.w -
+            self.overlap_pixel) / (self.size - self.overlap_pixel)), 0))
 
 
     def __len__(self):
