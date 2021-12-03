@@ -2,7 +2,7 @@
 
 
 
-![](figure/pipeline.pdf)
+![](figure/pipeline.png)
 
 ## Introduction
 
