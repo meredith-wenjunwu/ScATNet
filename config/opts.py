@@ -36,7 +36,7 @@ def general_opts(parser):
     group.add_argument('--finetune', default=False, type=str_to_bool, help='Freeze batch norm layer for fine tuning')
     group.add_argument('--finetune-base-extractor', type=str_to_bool, help="Freeze batch norm layer in base extractor for fine tuning")
     group.add_argument('--mixed_precision', type=str_to_bool, default=False)
-    group.add_argument('max-bsz-cnn-gpu0', default=100, type=int, help='Max. batch size on GPU0')
+    group.add_argument('--max-bsz-cnn-gpu0', default=100, type=int, help='Max. batch size on GPU0')
     group.add_argument('--resume', default=None, type=str, help='path to latest checkpoint (default: none)')
     group.add_argument('--use-gpu', default=True, type=str_to_bool, nargs='?', const=True, help='Use gpu for experiment')
     group.add_argument('--gpu-id', nargs='+', type=int)
