@@ -78,7 +78,6 @@ class experiment_engine(object):
             target = []
             optimizer.zero_grad()
             for i, (multi_data, labels, labels_conf, paths, mask) in tqdm.tqdm(enumerate(self.train_loader), leave=False, total=len(self.train_loader)):
-                pdb.set_trace()
                 step += 1
                 if self.warmup and step < 500:
                     lr_scale = min(1., float(step + 1) / 500.)
@@ -91,7 +90,6 @@ class experiment_engine(object):
                 else:
                     scheduler.step(epoch)
                 target.extend(l.item() for l in labels)
-
                 if multi_data[0].dim() != 3:
                     # [B x C x 3 x H x W] x Scales
                     multi_feat, mask, labels_conf = self.multi_scale_features(multi_data=multi_data,
