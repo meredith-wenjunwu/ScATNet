@@ -42,18 +42,16 @@ def build_melanoma_transforms(opts):
     data_transforms['valid'] = transforms.Compose([
             EvalResize(opts['resize1'][0]),
             #CenterCrop(size=opts['resize1']),
-            # instead of center crop, do sliding window of test slide
             msc_transform(scale_levels=opts['resize1_scale'], size=opts['resize1']),
             ToTensor(),
             DivideToCrops(scale_levels=opts['resize2_scale'], crop_size=opts['resize2']),
-            imagenet_nomalization]) if not opts['sliding_window_evaluation'] else transforms.Compose([Resize(crop_size)])
-
+            imagenet_nomalization])
     data_transforms['test'] = transforms.Compose([
             ToTensor(),
             msc_transform(scale_levels=opts['resize1_scale'], size=opts['resize1']),
             DivideToCrops(scale_levels=opts['resize2_scale'], crop_size=opts['resize2']),
             imagenet_nomalization
-        ]) if opts['sliding_window_evaluation'] else None
+        ])
     return data_transforms
 
 
@@ -174,8 +172,6 @@ def build_dataset(opts):
     # -----------------------------------------------------------------------------
     # data_transforms = build_melanoma_transforms(opts) if opts['dataset'] == 'melanoma' else build_breast_transforms(opts)
     train_set, valid_set, test_set = create_datasets(opts)
-    if opts['sliding_window_evaluation']:
-        return train_set, valid_set, test_set
     train_loader, valid_loader, test_loader = create_dataloader(train_set, valid_set, test_set, opts=opts)
     return train_loader, valid_loader, test_loader
 
