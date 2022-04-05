@@ -78,6 +78,7 @@ class experiment_engine(object):
             target = []
             optimizer.zero_grad()
             for i, (multi_data, labels, labels_conf, paths, mask) in tqdm.tqdm(enumerate(self.train_loader), leave=False, total=len(self.train_loader)):
+                pdb.set_trace()
                 step += 1
                 if self.warmup and step < 500:
                     lr_scale = min(1., float(step + 1) / 500.)
