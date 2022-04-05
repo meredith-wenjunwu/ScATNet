@@ -1,6 +1,4 @@
 from dataset.multi_scale_dataset import MultiScaleDataset
-from dataset.breaKhis_dataset import BreaKhisDataset
-from dataset.ISIC_dataset import ISIC_Dataset
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 from os import path
