@@ -4,7 +4,6 @@ from torch.utils.data import Dataset
 from PIL import Image
 Image.MAX_IMAGE_PIXELS = 2000000000
 import numpy as np
-from dataset.slidingwindow_dataset import SlidingWindowDataset
 import torchvision.transforms as transforms
 from dataset.transforms import DivideToCrops, DivideToScales, RandomCrop, Normalize, ToTensor, Resize, Zooming, EvalResize, KCrops
 from dataset.transforms import CenterCrop,NumpyToTensor
@@ -24,7 +23,6 @@ class MultiScaleDataset(Dataset):
         self.mask_type = opts['mask_type']
         with open(datasetfile, 'r') as f:
             self.image_list = [line.rstrip() for line in f]
-        self.sliding_window=opts['sliding_window_evaluation']
         self.window_size = opts['resize1']
         self.opts = opts
         self.binarized_data = binarized_data
@@ -32,7 +30,7 @@ class MultiScaleDataset(Dataset):
 
 
     def training_transforms(self, crop_size):
-        msc_transform = DivideToScales if self.opts['transform'] == 1 else Zooming
+        msc_transform = DivideToScales if self.opts['transform'] == 'DivideToScale' else Zooming
         return transforms.Compose(
             [
                 Resize(max(crop_size)),
@@ -45,14 +43,14 @@ class MultiScaleDataset(Dataset):
         )
 
     def validation_transforms(self, crop_size):
-        msc_transform = DivideToScales if self.opts['transform'] == 1 else Zooming
+        msc_transform = DivideToScales if self.opts['transform'] == 'DivideToScale' else Zooming
         return transforms.Compose([
             Resize(min(crop_size)),
             # CenterCrop(size=crop_size),
             msc_transform(scale_levels=self.opts['resize1_scale'], size=crop_size),
             ToTensor(),
             DivideToCrops(scale_levels=self.opts['resize2_scale'], crop_size=self.opts['resize2']),
-            imagenet_normalization]) if not self.opts['sliding_window_evaluation'] else transforms.Compose([Resize(max(crop_size))])
+            imagenet_normalization])
 
     def test_transforms(self):
         msc_transform = DivideToScales if self.opts['transform'] == 1 else Zooming
@@ -133,11 +131,7 @@ class MultiScaleDataset(Dataset):
                 print(img_path)
                 exit()
 
-        if not self.sliding_window:
-            return sample['image'], label, return_label, img_path, sample['mask'] if sample['mask'] is not None else -1
-        else:
-            assert self.window_size is not None, "window size must be either int or Iterable, not None"
-            return SlidingWindowDataset(sample, self.window_size, self.test_transforms(), label, return_label, img_path)
+        return sample['image'], label, return_label, img_path, sample['mask'] if sample['mask'] is not None else -1
 
     def inverse_normalize_image(self, image_tensor, mask, im_ind):
         from os import path

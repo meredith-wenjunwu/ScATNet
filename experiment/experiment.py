@@ -1,16 +1,13 @@
 import tqdm
 import torch
 from utilities.print_fc import print_report
-from visual.visualize import visual_save_grad, compute_stats, visualize_top_k_crop, compute_case
 from sklearn.metrics import accuracy_score
 import os
 from torch import nn
 from experiment.EMA import EMA
+from utilities.visualize import compute_stats, compute_case, visualize_top_k_crop
 import numpy as np
 import pdb
-from dataset.dataloaders import sliding_dataloader
-
-torch.autograd.set_detect_anomaly(True)
 
 
 class experiment_engine(object):
@@ -29,7 +26,7 @@ class experiment_engine(object):
         for j in range(num_scales):
             _data = multi_data[j]
             if feature_extractor is not None:
-                split_size = self.train_split if self.train_split > 0 else len(_data)
+                split_size = self.max_bsz_cnn_gpu0 if self.max_bsz_cnn_gpu0 > 0 else len(_data)
                 split_data = torch.split(_data, split_size_or_sections=split_size, dim=1)
 
                 feat = []
@@ -122,14 +119,7 @@ class experiment_engine(object):
                 train_acc = accuracy_score(target, output)
                 self.logger.update(epoch, train_acc, mode='train_err')
                 self.logger.update(epoch, self.confusion_meter.value(), mode='train_mat')
-                # scores = torch.cat(scores, dim=0)
-                # predictions_max_sm = nn.Softmax(dim=-1)(scores)  # Image x Classes
-                # pred_label_max = torch.max(predictions_max_sm, dim=-1)[1]  # Image x 1
-                # pred_label_max = pred_label_max.byte().cpu().numpy().tolist()  # Image x 1
-                # pred_conf_max = predictions_max_sm.float().cpu().numpy()  # Image x Classes
-                # print(pred_conf_max.shape)
-                # compute_stats(y_true=target, y_pred=pred_label_max, y_prob=pred_conf_max, logger=self.logger,
-                #                    mode='train_roc', num_classes=self.num_classes)
+
             else:
                 print('loss: {:0.23f}'.format(epoch_loss/len(self.train_loader)))
                 print_report(output, target, name='Train', epoch=epoch)
@@ -201,113 +191,16 @@ class experiment_engine(object):
             grad = grad.byte().cpu().numpy()
 
 
-            #max_grad = torch.max(grad_inp[:, i, :, :])
-            #min_grad = torch.min(grad_inp[:, i, :, :])
-            #grad_inp[:, i, :, :] = ((grad_inp[:, i, :, :] - min_grad) /
-            #                    (max_grad - min_grad))
-
-        #grad_inp *= 255
-        #grad_inp = grad_inp.byte().cpu().numpy()
         _, predicted = torch.max(output.data, 1)
         result = predicted.detach().cpu().item()
         return grad, output, result
 
 
     def eval(self, model, criterion,
-             epoch=None, mode='val', feature_extractor=None,
-             sliding_window=False):
-        if sliding_window:
-            return self.eval_sliding(model, criterion, epoch=epoch,
-                                     mode=mode, feature_extractor=feature_extractor)
-        else:
-            return self.eval_crop(model, criterion, epoch=epoch,
-                                  mode=mode, feature_extractor=feature_extractor)
+             epoch=None, mode='val', feature_extractor=None):
 
-    def eval_sliding(self, model, criterion,
-                     epoch=None,  mode='val', feature_extractor=None):
-        if 'val' in mode or 'ema' in mode:
-            dataset = self.val_loader
-        elif 'test' in mode:
-            dataset = self.test_loader
-        elif 'train' in mode:
-            dataset = self.train_loader
-        else:
-            import sys
-            sys.exit('Wrong evaluation mode. Choices are val or test, got "{}"'.format(mode))
-        model.eval()
-        val_target = []
-        val_output_ensemble = []
-        val_loss = []
-        scores = []
-        scale_attns = []
-        if self.visdom:
-            self.confusion_meter.reset()
-        with torch.no_grad():
-            for i, d_set in tqdm.tqdm(enumerate(dataset), leave=False, total=len(dataset)):
-                dataloader = sliding_dataloader(dataset, i)
-                case_score = []
-                case_predicted = []
-                case_loss = []
-                case_probabilities = []
-                case_scale_attn = []
-                for i, (multi_data, target, target_conf, paths, mask) in tqdm.tqdm(enumerate(dataloader),
-                                                                                 leave=False,
-                                                                                 total=len(dataloader)):
-                    if i == 0:
-                        val_target.extend(t.item() for t in target)
-
-                    multi_feat, mask, labels_conf = self.multi_scale_features(multi_data=multi_data,
-                                                                              feature_extractor=feature_extractor,
-                                                                              mask=mask, labels_conf=target_conf)
-
-                    output, output_vis, scale_attn= model(x=multi_feat, src_mask=mask)
-                    probabilities = nn.Softmax(dim=-1)(output.detach().cpu())
-                    scale_attn = scale_attn.detach().cpu()
-                    if len(scale_attn.shape) > 2:
-                        scale_attn = scale_attn.squeeze(2)[0]
-                    case_scale_attn.append(scale_attn.tolist())
-                    case_probabilities.append(probabilities.detach().cpu().tolist()[0])
-                    case_score.append(output.detach().cpu().tolist()[0])
-                    case_loss.append(criterion(output, labels_conf).detach().cpu().item())
-                    _, predicted = torch.max(output.data, 1)
-                    case_predicted.extend(predicted.detach().cpu().tolist())
-                val_loss.append(np.mean(case_loss))
-                scores.append(np.mean(case_score, axis=0))
-                scale_attns.append(np.mean(case_scale_attn, axis=0))
-                max_output = np.max(case_predicted)
-                ind_max = np.argmax(case_predicted)
-                val_output_ensemble.append(max_output)
-
-                if self.save_result:
-                    with open(os.path.join(self.savedir, 'result.txt'), 'a') as f:
-                        f.write('{}; {}; {}; {}\n'.format(paths[0], int(max_output),
-                                                      case_probabilities[ind_max], list(np.mean(case_scale_attn, axis=0))))
-
-                if self.visdom:
-                    self.confusion_meter.add(predicted, target)
-
-        val_loss = np.mean(val_loss)
-        scores = np.stack(scores)
-        val_output = np.argmax(scores, axis=1)
-        val_acc = accuracy_score(val_target, val_output_ensemble)
-        if self.mode == 'test' or self.mode == 'valid':
-            sp = self.savedir
-        else:
-            sp = None
-        if self.visdom:
-            self.logger.update(epoch, val_loss/len(dataloader), mode='{}_loss'.format(mode))
-            self.logger.update(epoch, val_acc, mode='{}_err'.format(mode))
-            self.logger.update(epoch, self.confusion_meter.value(), mode='{}_mat'.format(mode))
-        else:
-            compute_stats(y_true=val_target, y_pred=val_output, y_prob=None, logger=None,
-                          mode='{}_roc'.format(mode), num_classes=self.num_classes,
-                          savepath=sp, fname=self.save_name)
-            name = 'Valid' if mode == 'val' else 'Test'
-            print_report(val_output, val_target, name=name+'_average', epoch=epoch)
-            print_report(val_output_ensemble, val_target, name=name+'_max', epoch=epoch)
-
-        return val_loss/len(dataloader), val_acc
-
+        return self.eval_crop(model, criterion, epoch=epoch,
+                              mode=mode, feature_extractor=feature_extractor)
 
     def eval_crop(self, model, criterion,
                   epoch=None, mode='val', feature_extractor=None):
@@ -347,15 +240,8 @@ class experiment_engine(object):
                     multi_feat = [d.to(device=self.gpu_id[0]) for d in multi_data]
                     mask = None
 
-                #multi_feat, mask, labels_conf = self.multi_scale_features(multi_data=multi_data,
-                #                                                          feature_extractor=feature_extractor,
-                #                                                          mask=mask, labels_conf=target_conf)
-
                 output, output_vis, scale_attn = model(x=multi_feat, src_mask=mask)
-                # scale_attn = scale_attn.detach().cpu()
-                # if len(scale_attn.shape) > 2:
-                #     scale_attn = scale_attn.squeeze(2)
-                # scale_attn = scale_attn.tolist()
+
                 if self.loss_function != 'bce':
                     probabilities = nn.Softmax(dim=-1)(output.detach().cpu())
                 else:

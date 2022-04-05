@@ -56,15 +56,13 @@ def main(args):
     elif args['mode'] == 'test':
         print_info_message('Evaluation on Test Process Starts...')
         engine.eval(model, criterion, mode='test',
-                    feature_extractor=feature_extractor, sliding_window=args['sliding_window_evaluation'])
+                    feature_extractor=feature_extractor)
     elif args['mode'] == 'valid':
         print_info_message('Evaluation on Validation Process Starts...')
-        engine.eval(model, criterion, mode='val', feature_extractor=feature_extractor,
-                    sliding_window=args['sliding_window_evaluation'])
+        engine.eval(model, criterion, mode='val', feature_extractor=feature_extractor)
     elif args['mode'] == 'valid-train':
         print_info_message('Evaluation on Training Process Starts...')
-        engine.eval(model, criterion, mode= 'train', feature_extractor=feature_extractor,
-                    sliding_window=args['sliding_window_evaluation'])
+        engine.eval(model, criterion, mode= 'train', feature_extractor=feature_extractor)
 
 
 if __name__ == '__main__':
