@@ -81,7 +81,6 @@ def get_dataset_opts(parser):
     '''
     group = parser.add_argument_group('Dataset general details')
     group.add_argument('--data', '--datasetfile', help='path to dataset txt files')
-    group.add_argument('--dataset', choices=['melanoma', 'breakhis', 'ISIC'])
     group.add_argument('--mask', default=None,
                         help='path to masks (background, dermis, epidermis)')
     group.add_argument('--mask-type', default=None, choices=['black-bg',

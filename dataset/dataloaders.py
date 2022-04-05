@@ -10,39 +10,19 @@ import pdb
 from dataset.sampler.variable_batch_sampler import VariableBatchSampler as VBS
 
 def create_datasets(opts):
-    if opts['dataset'] == 'melanoma':
-        train_set = MultiScaleDataset(opts=opts,
-                                      datasetfile=path.join(opts['data'], 'train.txt'),
-                                      datatype='train',
-                                      binarized_data=opts['binarize'])
-        val_set = MultiScaleDataset(opts=opts,
-                                    datasetfile=path.join(opts['data'], 'valid.txt'),
-                                    datatype='valid',
-                                    binarized_data=opts['binarize'])
-        test_set = MultiScaleDataset(opts=opts,
-                                     datasetfile=path.join(opts['data'], 'test.txt'),
-                                     datatype='valid',
-                                     binarized_data=opts['binarize'])
+    train_set = MultiScaleDataset(opts=opts,
+                                  datasetfile=path.join(opts['data'], 'train.txt'),
+                                  datatype='train',
+                                  binarized_data=opts['binarize'])
+    val_set = MultiScaleDataset(opts=opts,
+                                datasetfile=path.join(opts['data'], 'valid.txt'),
+                                datatype='valid',
+                                binarized_data=opts['binarize'])
+    test_set = MultiScaleDataset(opts=opts,
+                                 datasetfile=path.join(opts['data'], 'test.txt'),
+                                 datatype='valid',
+                                 binarized_data=opts['binarize'])
 
-    elif opts['dataset'] == 'breakhis':
-        train_set = BreaKhisDataset(path.join(opts['data'], 'train.txt'),
-                                    num_scale=len(opts['resize1_scale']))
-
-        val_set = BreaKhisDataset(path.join(opts['data'], 'valid.txt'),
-                                  num_scale=len(opts['resize1_scale']))
-
-        test_set = BreaKhisDataset(path.join(opts['data'], 'test.txt'),
-                                   num_scale=len(opts['resize1_scale']))
-    elif opts['dataset'] == 'ISIC':
-        train_set = ISIC_Dataset(opts,
-                                 path.join(opts['data'], 'train.txt'),
-                                 datatype='train')
-        val_set = ISIC_Dataset(opts,
-                               path.join(opts['data'], 'valid.txt'),
-                               datatype='valid')
-        test_set = ISIC_Dataset(opts,
-                                path.join(opts['data'], 'test.txt'),
-                                datatype='test')
     return train_set, val_set, test_set
 
 
