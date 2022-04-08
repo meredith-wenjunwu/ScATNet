@@ -26,26 +26,6 @@ _pil_interpolation_to_str = {
     Image.BOX: 'PIL.Image.BOX',
 }
 
-
-# class SlideWindow(object):
-#     '''
-#     Returns a list of cropped images
-#     '''
-#     def __init__(self, size, step=0):
-#         if isinstance(size, (int, float)):
-#             self.size = (int(size), int(size))
-#         else:
-#             self.size = size
-#         self.unfold = torch.nn.Unfold(self.size, stride=step)
-#
-#     def __call__(self, sample: dict):
-#         image, mask = sample['image'], sample['mask']
-#         image = image.unsqueeze(0)
-#         crops = self.unfold(image)
-#         crops = crops.reshape(3, self.size[0], self.size[1], -1).permute(3, 0, 1, 2)
-#         return {'image': crops, 'mask': mask}
-
-
 class NumpyToTensor(object):
     def __init__(self):
         super(NumpyToTensor, self).__init__()
@@ -72,30 +52,49 @@ class NumpyToTensor(object):
             return_image.append(img_tensor)
         return {'image': return_image, 'mask':return_mask}
 
+class randomSelectScale(object):
+    def __init__(self, scale:int=-1):
+        super(randomSelectScale, self).__init__()
+        self.scale = scale
+
+    def __call__(self, sample:dict):
+        '''select one sale and return'''
+        image, masks = sample['image'], sample['mask']
+        assert isinstance(image, list)
+        assert len(image) == len(masks)
+        if self.scale == -1:
+            i = random.randint(0, len(image)-1)
+
+        else:
+            i = self.scale
+        mask = masks[i] if masks is not None else None
+        return {'image': image[i], 'mask': mask}
+
 
 class KCrops(object):
-    def __init__(self, scale_levels: list, n_crops=7):
+    def __init__(self, scale_levels: list, n_crops=[7]):
         self.n_crops_h = n_crops
         self.n_crops_w = n_crops
 
         self.scales = scale_levels
 
-    def divide_image_to_crops(self, image):
+    def divide_image_to_crops(self, image, scale_ind):
         # resize image into small crops
         channel, h, w = image.shape
-        crop_size_h = int(math.ceil(h / self.n_crops_h))
-        crop_size_w = int(math.ceil(w / self.n_crops_w))
+        crop_size_h = int(math.ceil(h / self.n_crops_h[scale_ind]))
+        crop_size_w = int(math.ceil(w / self.n_crops_w[scale_ind]))
 
         # transform crop
         # resize crop to fit the crop size
-        new_h = self.n_crops_h * crop_size_h
-        new_w = self.n_crops_w * crop_size_w
+        new_h = self.n_crops_h[scale_ind] * crop_size_h
+        new_w = self.n_crops_w[scale_ind] * crop_size_w
 
         # transform to crops
         ## Image to BAGS
         image = F.resize(img=image, size=[new_h, new_w], interpolation=Image.BICUBIC)
         # [C x N_B_H x B_H x W]] --> [C x N_B_H x B_H x N_B_W x B_W]
-        crops = torch.reshape(image, (channel, self.n_crops_h, crop_size_h, self.n_crops_w, crop_size_w))
+        crops = torch.reshape(image, (channel, self.n_crops_h[scale_ind], crop_size_h,
+                                      self.n_crops_w[scale_ind], crop_size_w))
         # [C x N_B_H x B_H x N_B_W x B_W] --> [C x N_B_H x N_B_W x B_H x B_W]
         crops = crops.permute(0, 1, 3, 2, 4)
 
@@ -103,19 +102,22 @@ class KCrops(object):
         # Preserve dimensionality, move to forward loop
         # '''
         # #[C x N_B_H x N_B_W x B_H x B_W]--> [C x N_B_w * N_B_h x B_H x B_W]
-        crops = torch.reshape(crops, (channel, self.n_crops_h * self.n_crops_w, crop_size_h, crop_size_w))
+        crops = torch.reshape(crops, (channel, self.n_crops_h[scale_ind] * self.n_crops_w[scale_ind],
+                                      crop_size_h, crop_size_w))
         # #[C x N_B_w * N_B_h x B_H x B_W] --> [N_B_w * N_B_h x C x B_H x B_W]
         crops = crops.permute(1, 0, 2, 3)
         return crops
 
     def __call__(self, sample: dict):
         image, mask = sample['image'], sample['mask']
-        images = [self.divide_image_to_crops(im) for im, sc in zip(image, self.scales)]
-
+        images = []
+        for i, im in enumerate(image):
+            images.append(self.divide_image_to_crops(im, i))
         masks = None
         if mask is not None:
-            masks = [self.divide_image_to_crops(m) for m, sc in zip(mask, self.scales)]
-
+            masks = []
+            for i, m in enumerate(mask):
+                masks.append(self.divide_image_to_crops(m, i))
         return {'image': images, 'mask': masks}
 
 
@@ -165,13 +167,31 @@ class DivideToCrops(object):
 
     def __call__(self, sample: dict):
         image, mask = sample['image'], sample['mask']
-        images = [self.divide_image_to_crops(im, crop_size=self.crop_sizes[sc]) for im, sc in zip(image, self.scales)]
-
+        if isinstance(image, list):
+            images = [self.divide_image_to_crops(im, crop_size=self.crop_sizes[sc]) for im, sc in zip(image, self.scales)]
+        else:
+            images = self.divide_image_to_crops(image, crop_size=self.crop_sizes[1.0])
         masks = None
         if mask is not None:
-            masks = [self.divide_image_to_crops(m, crop_size=self.crop_sizes[sc]) for m, sc in zip(mask, self.scales)]
+            if isinstance(mask, list):
+                masks = [self.divide_image_to_crops(m, crop_size=self.crop_sizes[sc]) for m, sc in zip(mask, self.scales)]
+            else:
+                masks = self.divide_image_to_crops(mask, crop_size=self.crop_sizes[1.0])
 
         return {'image': images, 'mask': masks}
+
+
+class stackCrops(object):
+    def __init__(self):
+        super(stackCrops, self).__init__()
+
+    def __call__(self, sample:dict):
+        images, masks = sample['image'], sample['mask']
+        assert isinstance(images, list), "Expected a list got {}".format(type(images))
+        image = torch.stack(images, dim=0)
+        mask = torch.stack(masks, dim=0)
+        return {'image': image, 'mask': mask}
+
 
 
 class DivideToScales(object):
@@ -210,7 +230,7 @@ class DivideToScales(object):
     def divide_image_to_scales(self, image, mask, scale):
         image = F.resize(image, self.resize[scale], self.interpolation)
         if mask is not None:
-             mask = F.resize(image, self.resize[scale], Image.NEAREST)
+             mask = F.resize(mask, self.resize[scale], Image.NEAREST)
         return image, mask
 
     def get_scales(self, sample: dict):
@@ -413,7 +433,8 @@ class RandomCrop(object):
 
     """
 
-    def __init__(self, size, padding=None, pad_if_needed=False, fill=0, padding_mode='constant'):
+    def __init__(self, size, padding=None, pad_if_needed=False, fill=0, padding_mode='constant',
+                 sample_use_mask=False):
         if isinstance(size, numbers.Number):
             self.size = (int(size), int(size))
         else:
@@ -422,9 +443,10 @@ class RandomCrop(object):
         self.pad_if_needed = pad_if_needed
         self.fill = fill
         self.padding_mode = padding_mode
+        self.sample_use_mask = sample_use_mask
 
     @staticmethod
-    def get_params(img, output_size):
+    def get_params(img, output_size, mask=None):
         """Get parameters for ``crop`` for a random crop.
 
         Args:
@@ -434,13 +456,32 @@ class RandomCrop(object):
         Returns:
             tuple: params (i, j, h, w) to be passed to ``crop`` for random crop.
         """
-        w, h = _get_image_size(img)
-        th, tw = output_size
-        if w == tw and h == th:
-            return 0, 0, h, w
-        i = random.randint(0, h - th)
-        j = random.randint(0, w - tw)
-        return i, j, th, tw
+        if mask is not None:
+            while (True):
+                if F._is_pil_image(mask):
+                    mask = np.array(mask)
+                coords = np.array(np.where(mask > 0)).T
+                rand_ind = np.random.randint(0, coords.shape[0])
+                point = coords[rand_ind]
+
+                rand_h, rand_w = point
+                th, tw = output_size
+                if rand_w+tw < img.size[0] or rand_h + th < img.size[1]:
+                    break
+                # patch_mask = mask[rand_h:rand_h + th, rand_w:rand_w + tw]
+                # covered_tissue_area = np.sum(patch_mask) // max(np.max(patch_mask), 1)
+
+                # if covered_tissue_area / (th * tw) > 0.2:
+                #     break
+            return rand_h, rand_w, th, tw
+        else:
+            w, h = _get_image_size(img)
+            th, tw = output_size
+            if w == tw and h == th:
+                return 0, 0, h, w
+            i = random.randint(0, h - th)
+            j = random.randint(0, w - tw)
+            return i, j, th, tw
 
     def __call__(self, sample: dict):
         """
@@ -451,6 +492,8 @@ class RandomCrop(object):
             PIL Image: Cropped image.
         """
         image, mask = sample['image'], sample['mask']
+        if self.sample_use_mask:
+            assert mask is not None, 'TO use mask, sample[mask] cannot be None'
 
         if self.padding is not None:
             image = F.pad(image, self.padding, self.fill, self.padding_mode)
@@ -458,18 +501,20 @@ class RandomCrop(object):
                 mask = F.pad(mask, self.padding, self.fill, self.padding_mode)
         # pad the width if needed
         if self.pad_if_needed and image.size[0] < self.size[1]:
-            image = F.pad(image, (self.size[1] - image.size[0], 0), self.fill, self.padding_mode)
+            image = F.pad(image, [self.size[1] - image.size[0], 0], self.fill, self.padding_mode)
             #print('in transform: mask size {}, {}'.format(mask.size[0], mask.size[1]))
             if mask is not None:
-                mask = F.pad(mask, (self.size[1] - mask.size[0], 0), 0, self.padding_mode)
+                mask = F.pad(mask, [self.size[1] - mask.size[0], 0], 0, self.padding_mode)
 
         # pad the height if needed
         if self.pad_if_needed and image.size[1] < self.size[0]:
             image = F.pad(image, (0, self.size[0] - image.size[1]), self.fill, self.padding_mode)
             if mask is not None:
                 mask = F.pad(mask, (0, self.size[0] - mask.size[1]), 0, self.padding_mode)
-
-        i, j, h, w = self.get_params(image, self.size)
+        if self.sample_use_mask:
+            i, j, h, w = self.get_params(image, self.size, mask=mask)
+        else:
+            i, j, h, w = self.get_params(image, self.size)
 
         image = F.crop(image, i, j, h, w)
         if mask is not None:
@@ -478,6 +523,28 @@ class RandomCrop(object):
 
     def __repr__(self):
         return self.__class__.__name__ + '(size={0}, padding={1})'.format(self.size, self.padding)
+
+
+class randomKCrops(object): # wraps around RandomCrop
+    def __init__(self, crop_size:list=(256, 256), num_k=20):
+        self.num_k = num_k
+        self.crop_size = crop_size
+        self.randomcrop = RandomCrop(self.crop_size, sample_use_mask=True)
+
+    def __call__(self, sample:dict):
+        '''randomly select k crops with 50% tissue area'''
+        crop_list = []
+        mask_list = [] if sample['mask'] is not None else None
+        for i in range(self.num_k):
+            crop = self.randomcrop(sample)
+            # crop['image'].save(str(i) + '.jpg')
+            # crop['mask'].save(str(i) + '_mask.jpg')
+            crop_list.append(crop['image'])
+            if mask_list is not None:
+                mask_list.append(crop['mask'])
+        return {'image': crop_list, 'mask': mask_list}
+
+
 
 
 class RandomRotation(object):
@@ -541,13 +608,13 @@ class RandomRotation(object):
             if isinstance(image, list):
                 return {'image': [F_local.rotate(im, angle, self.resample,
                                                 self.expand, self.center, self.fill) for im in image],
-                       'mask': [F_local.rotate(m, angle, self.resample,
-                                              self.expand, self.center, self.fill) for m in mask]}
+                       'mask': [F_local.rotate(m, angle, Image.NEAREST,
+                                              self.expand, self.center, 0) for m in mask]}
             else:
                 return {'image': F_local.rotate(image, angle, self.resample,
                                           self.expand, self.center, self.fill),
-                        'mask': F_local.rotate(mask, angle, self.resample,
-                                         self.expand, self.center, self.fill)}
+                        'mask': F_local.rotate(mask, angle, Image.NEAREST,
+                                         self.expand, self.center, 0)}
         else:
             if isinstance(sample, list):
                 return [F_local.rotate(s, angle, self.resample,
@@ -638,11 +705,26 @@ class RandomFlip(object):
     def __call__(self, sample):
         if type(sample) is dict:
             image, mask = sample['image'], sample['mask']
-            if random.random() <= self.p:
-                flip = random.choice([F.hflip, F.vflip])
-                return {'image': flip(image), 'mask': flip(mask)}
+            if isinstance(image, list):
+                image_list = []
+                mask_list = [] if mask is not None else None
+                for i, im in enumerate(image):
+                    if random.random() <= self.p:
+                        flip = random.choice([F.hflip, F.vflip])
+                        image_list.append(flip(image))
+                        if mask_list is not None:
+                            mask_list.append(flip(mask[i]))
+                    else:
+                        image_list.append(im)
+                        if mask_list is not None:
+                            mask_list.append(mask[i])
+                return {'image':image_list, 'mask':mask_list}
             else:
-                return sample
+                if random.random() <= self.p:
+                    flip = random.choice([F.hflip, F.vflip])
+                    image = flip(image)
+                    mask = flip(mask)
+                return {'image': image, 'mask': mask}
         else:
             if random.random() < self.p:
                 flip = random.choice([F.hflip, F.vflip])
@@ -766,7 +848,7 @@ class ToTensor(object):
         image_tensor = [F.to_tensor(im) for im in image] if isinstance(image, list) else F.to_tensor(image)
         mask_tensor = None
         if mask is not None:
-            mask_tensor = [torch.ByteTensor(np.array(m)).unsqueeze(0) for m in mask] if isinstance(mask, Iterable) else F.to_tensor(mask)
+            mask_tensor = [torch.ByteTensor(np.array(m)).unsqueeze(0) for m in mask] if isinstance(mask, list) else F.to_tensor(mask)
 
         return {'image': image_tensor, 'mask': mask_tensor}
 
@@ -879,7 +961,7 @@ class Normalize(object):
             Tensor: Normalized Tensor image.
         """
         image, mask = sample['image'], sample['mask']
-        image = [F.normalize(im, self.mean, self.std, self.inplace) for im in image]
+        image = [F.normalize(im, self.mean, self.std, self.inplace) for im in image] if isinstance(image, list) else F.normalize(image, self.mean, self.std, self.inplace)
         return {'image': image, 'mask': mask}
 
     def __repr__(self):
@@ -900,4 +982,5 @@ class NormalizeInverse(Normalize):
 
     def __call__(self, sample):
         return super().__call__(sample)
+
 

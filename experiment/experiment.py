@@ -100,7 +100,7 @@ class experiment_engine(object):
                     labels_conf = labels_conf.to(device=self.gpu_id[0])
                     multi_feat = [d.to(device=self.gpu_id[0]) for d in multi_data]
                     mask=None
-                out, _, _ = model(multi_feat, src_mask=mask)
+                out, _, _ = model(x=multi_feat, src_mask=mask)
                 loss = criterion(out, labels_conf)
                 loss.backward()
                 if (i + 1) % self.aggregate_batch == 0 or (i + 1) == len(self.train_loader):
@@ -218,7 +218,7 @@ class experiment_engine(object):
         val_output = []
         val_loss = 0
         scores = []
-        if 'melanoma' in self.dataset:
+        if self.evaluate_by_case:
             results_list = []
         if self.visdom:
             self.confusion_meter.reset()
@@ -227,6 +227,7 @@ class experiment_engine(object):
                                                                                leave=False,
                                                                                total=max(1, len(dataloader))):
                 val_target.extend(t.item() for t in target)
+                labels_conf = target_conf.to(device=self.gpu_id[0])
 
                 if multi_data[0].dim() != 3:
                     # [B x C x 3 x H x W] x Scales
@@ -235,7 +236,6 @@ class experiment_engine(object):
                                                                           mask=mask, labels_conf=labels_conf)
                 else:
                     # [B x C x F] x Scales
-                    labels_conf = target_conf.to(device=self.gpu_id[0])
                     multi_feat = [d.to(device=self.gpu_id[0]) for d in multi_data]
                     mask = None
 
@@ -249,7 +249,7 @@ class experiment_engine(object):
                 val_loss += criterion(output, labels_conf).detach().cpu().item()
                 _, predicted = torch.max(output.data, 1)
                 val_output.extend(predicted.detach().cpu().tolist())
-                if 'melanoma' in self.dataset:
+                if self.evaluate_by_case:
                     for j in range(len(paths)):
                         results_list.append((paths[j], int(target[j].item()), int(predicted[j].item())))
                 if self.save_top_k > 0:
@@ -276,7 +276,7 @@ class experiment_engine(object):
         pred_label_max = pred_label_max1.byte().cpu().numpy().tolist()  # Image x 1
         pred_conf_max = predictions_max_sm.float().cpu().numpy()  # Image x Classes
         val_acc = accuracy_score(val_target, val_output)
-        if 'melanoma' in self.dataset:
+        if self.evaluate_by_case:
             val_acc = compute_case(results_list, pred_conf_max, verbose=(epoch is None), mode=mode,
                                    savepath=self.savedir, save=self.save_result)
         if self.mode == 'test' or self.mode == 'valid':

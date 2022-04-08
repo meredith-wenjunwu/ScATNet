@@ -12,6 +12,7 @@ def create_datasets(opts):
                                   datasetfile=path.join(opts['data'], 'train.txt'),
                                   datatype='train',
                                   binarized_data=opts['binarize'])
+
     val_set = MultiScaleDataset(opts=opts,
                                 datasetfile=path.join(opts['data'], 'valid.txt'),
                                 datatype='valid',
@@ -80,7 +81,7 @@ def create_dataloader(train_set, val_set, test_set, opts):
                               sampler=valid_sampler,
                               num_workers=opts['workers'],
                               pin_memory = False)
-    
+
     test_loader = DataLoader(test_set, batch_size=opts['batch_size'],
                              num_workers=opts['workers'],
                              pin_memory = False)
