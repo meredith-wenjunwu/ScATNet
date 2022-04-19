@@ -1,0 +1,4 @@
+subjectG/slice0.tif;0;1,0,0,0
+subjectH/slice1.tif;1;0,1,0,0
+subjectI/slice1.tif;2;0,0,1,0
+subjectJ/slice0.tif;3;0,0,0,1

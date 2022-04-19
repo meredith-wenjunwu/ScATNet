@@ -20,7 +20,35 @@ This repo requires the following packages:
 - CUDA 10.2
 - NVIDIA GeForce RTX 2080 Ti
 
-## Preprocessing
 
+We have tested our code only on linux environments. If you are facing issues installing OpenSlide, please check here:
+```
+https://openslide.org/
+```
+
+### Install PyTorch
+Please see below webpage for installing PyTorch. We have tested our code with PyTorch 1.0+.
+
+``` 
+https://pytorch.org/
+```
+
+
+## Preprocessing
 This Step is highly dependent on the format of slide types. In this work, we use tissue regions per slide at resolution of x20 and downsize to get x12.5, x10, x7.5 and x5. Otsu threshold is used to [segment individual tissue slices](https://digitalslidearchive.github.io/HistomicsTK/examples/simple_tissue_detection.html) from a slide. 
+
+For each slide, we computed soft labels using singular value decomposition as described in the paper. 
+
+## Example Dataset File
+Check `sample_data` for the format used in dataset files of our experiments. Each line contains one whole slide image slice and follows the following format:
+```
+patient_id/slices_filename;class_label;soft_label_vector
+```
+
+## Training and Evaluation
+See scripts `training_script.sh` and `eval_script.sh` for training and evaluation related examples. Our evaluation code evaluates the performance of a model across different metrics, including plots for ROC curves. Please see [cmat_metrics.py](https://github.com/sacmehta/HATNet/blob/8f8bcd3b3eb4bd9c8a06d395e52e0989443b3156/metrics/cmat_metrics.py#L4) and [evaluator.py](https://github.com/sacmehta/HATNet/blob/ca24d499cb40fea36f29e551f02e8d663b4046c4/train_and_eval/evaluator.py#L257) files.
+
+
+
+
 

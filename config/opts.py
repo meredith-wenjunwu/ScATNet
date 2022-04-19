@@ -89,7 +89,7 @@ def get_dataset_opts(parser):
     group.add_argument('--dataset-crop', default=[1,0, 1.0], help='ratio of crop to drop in training', nargs='+',
                        type=float)
     group.add_argument('--resize1', '--crop1', type=int, nargs='+')
-    group.add_argument('--resize2', '--crop2', default=256, type=int, nargs='+')
+    group.add_argument('--resize2', '--crop2', default=[512, 512], type=int, nargs='+')
     group.add_argument('--transform', type=str, choices=['Zooming', 'DivideToScale'], default='DivideToScale',
                        help='Type of transform: 1) Zooming - random zoom and center crop, then divide to scale' + \
                        '; 2) DivideToScale - just divide original image to different scales')

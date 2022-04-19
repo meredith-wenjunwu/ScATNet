@@ -1,0 +1,5 @@
+subjectA/slice0.tif;0;1,0,0,0
+subjectA/slice1.tif;1;0.42448934924131443,0.5755106507586857,0.0,0.0
+subjectB/slice0.tif;2;0,0,1,0
+subjectB/slice1.tif;2;0.16593859041990405, 0.421529277691901, 0.4125321318881949,0.0
+subjectC/slice0.tif;3;0,0,0,1
