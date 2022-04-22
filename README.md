@@ -46,9 +46,5 @@ patient_id/slices_filename;class_label;soft_label_vector
 ```
 
 ## Training and Evaluation
-See scripts `training_script.sh` and `eval_script.sh` for training and evaluation related examples. Our evaluation code evaluates the performance of a model across different metrics, including plots for ROC curves. Please see [cmat_metrics.py](https://github.com/sacmehta/HATNet/blob/8f8bcd3b3eb4bd9c8a06d395e52e0989443b3156/metrics/cmat_metrics.py#L4) and [evaluator.py](https://github.com/sacmehta/HATNet/blob/ca24d499cb40fea36f29e551f02e8d663b4046c4/train_and_eval/evaluator.py#L257) files.
-
-
-
-
+See scripts `training_script.sh` for training related examples. Our evaluation code evaluates the performance of a model across different metrics, including plots for ROC curves. Please see [cmat_metrics.py](https://github.com/meredith-wenjunwu/ScATNet/blob/master/utilities/metrics/cmat_metrics.py).
 
