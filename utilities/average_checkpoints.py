@@ -80,7 +80,6 @@ def main():
     epoch_numbers = [x[0] for x in sorted_epoch_acc[:args.best_n]]
 
     checkpoints = []
-
     for f_name in after_epochs_name:
         if 'EMA' in f_name:
             continue

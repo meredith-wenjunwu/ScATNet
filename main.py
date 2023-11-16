@@ -27,6 +27,7 @@ def main(args):
     args = build_cuda(args)
     criterion = build_criteria(args)
     model, feature_extractor = build_model(args)
+    attn_criterion = build_attn_criteria(args)
 
 
     # -----------------------------------------------------------------------------
@@ -39,7 +40,7 @@ def main(args):
     args = build_visualization(args)
     engine = experiment_engine(train_loader, valid_loader,
                                test_loader, **args)
-    if opts.mode != 'kmeans':
+    if args['mode'] != 'kmeans':
         optimizer = build_optimizer(args, model)
         scheduler = build_scheduler(args, optimizer)
 
@@ -50,19 +51,21 @@ def main(args):
     if args['mode'] == 'train':
         print_info_message('Training Process Starts...')
         print_info_message("Number of Parameters: {:.2f} M".format(sum([p.numel() for p in model.parameters()])/1e6))
-        engine.train(model, args['epochs'], criterion,
+        result = engine.train(model, args['epochs'], criterion,
                      optimizer, scheduler,
-                     args['start_epoch'], feature_extractor=feature_extractor)
+                     args['start_epoch'], feature_extractor=feature_extractor, 
+                     attn_guide=args['attn_guide'], criterion_attn=attn_criterion, lambda_attn=args['lambda_attn '])
     elif args['mode'] == 'test':
         print_info_message('Evaluation on Test Process Starts...')
-        engine.eval(model, criterion, mode='test',
+        result = engine.eval(model, criterion, mode='test',
                     feature_extractor=feature_extractor)
     elif args['mode'] == 'valid':
         print_info_message('Evaluation on Validation Process Starts...')
-        engine.eval(model, criterion, mode='val', feature_extractor=feature_extractor)
+        result = engine.eval(model, criterion, mode='val', feature_extractor=feature_extractor)
     elif args['mode'] == 'valid-train':
         print_info_message('Evaluation on Training Process Starts...')
-        engine.eval(model, criterion, mode= 'train', feature_extractor=feature_extractor)
+        result = engine.eval(model, criterion, mode= 'train', feature_extractor=feature_extractor)
+    return result
 
 
 if __name__ == '__main__':

@@ -57,7 +57,7 @@ def build_melanoma_transforms(opts):
 
 def build_criteria(opts):
     '''
-    Build the criterian function
+    Build the criterion function
     :param opts: arguments
     :return: Loss function
     '''
@@ -73,6 +73,16 @@ def build_criteria(opts):
         criterion = CrossEntropyWithLabelSmoothing(smoothing=opts['smoothing'])
     if opts['cuda'] is not None:
         criterion = criterion.to(opts['cuda'])
+    return criterion
+
+def build_attn_criteria(opts):
+    '''
+    Build the attention guiding criterion function
+    :param opts: arguments
+    :return: attn loss function
+    '''
+    from experiment.attn_guiding import AttnGuideReg
+    criterion = AttnGuideReg(num_heads=opts['attn_head'], batch_size=opts['batch_size'], loss_type=opts['attn_loss'])
     return criterion
 
 def build_cuda(opts):
@@ -198,7 +208,7 @@ def build_model(opts):
     if opts['base_extractor'] != None:
         feature_extractor = BaseFeatureExtractor(opts)
         feature_extractor.eval()
-    if opts['resume'] is not None:
+    if opts['resume'] is not None and opts['resume'] != "":
         saved_dict = torch.load(opts['resume'])
     if opts['use_gpu'] and len(opts['gpu_id']) > 0:
         if opts['use_parallel']:
@@ -211,7 +221,7 @@ def build_model(opts):
         if feature_extractor is not None:
             feature_extractor.to(opts['cuda'])
             #print(feature_extractor is None)
-        if opts['resume'] is not None:
+        if opts['resume'] is not None and opts['resume'] != "":
             print_info_message('Loaded Model')
             model.load_state_dict(saved_dict)
         if len(opts['gpu_id']) == 1 and opts['model'] != 'kmeans':
@@ -226,7 +236,7 @@ def build_model(opts):
         #     new_state_dict[name] = v
         #     # load params
         # saved_dict = new_state_dict
-    if opts['resume'] is not None:
+    if opts['resume'] is not None and opts['resume'] != "":
         model.load_state_dict(saved_dict)
     if opts['finetune']:
         print_info_message('Freezing batch normalization layers in model')

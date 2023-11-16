@@ -79,6 +79,7 @@ def get_dataset_opts(parser):
     '''
     group = parser.add_argument_group('Dataset general details')
     group.add_argument('--data', '--datasetfile', help='path to dataset txt files')
+    group.add_argument('--attn', help='path to attention guidance weights')
     group.add_argument('--evaluate-by-case', action='store_true', default=False, help='Is there multiple slice per case?')
     group.add_argument('--mask', default=None,
                         help='path to masks (background, dermis, epidermis)')
@@ -108,6 +109,8 @@ def get_model_opts(parser):
     group.add_argument('--channels', default=3, type=int, help='Input channels')
     group.add_argument('--model-dim', default=256, type=int, help="linear projection dimension")
     group.add_argument('--weight-tie', action='store_true', default=False, help='use weight tying for transformers')
+    group.add_argument('--attn_guide', action='store_true', default=False, help='use attention guiding regularization')
+    group.add_argument('--attn_head', default=2, type=int, help='number of heads to impose attention guidance')
     group.add_argument('--n-layers', default=4, type=int, help='number of attention layers')
     group.add_argument('--head-dim', default=64, type=int, help="head dimension for attention layers")
     group.add_argument('--drop-out', default=0.2, type=float)
@@ -132,7 +135,9 @@ def get_optimizer_opts(parser):
                        help='Optimizer')
     group.add_argument('--adam-beta1', default=0.9, type=float, help='Beta1 for ADAM')
     group.add_argument('--adam-beta2', default=0.999,  type=float, help='Beta2 for ADAM')
-    group.add_argument('--weight-decay', default=4e-6, type=float, help='Weight decay')
+    group.add_argument('--weight-decay', default=4e-5, type=float, help='Weight decay')
+    group.add_argument('--lambda-attn', default=0.1, type=float, help='weight for attention loss')
+    group.add_argument('--attn-loss', choices=["Frobenius", "Inclusion_Exclusion"], type=str, help='attention loss type')
     group = parser.add_argument_group('Optimizer accumulation options')
     group.add_argument('--aggregate-batch', default=1, type=int, help="aggregate gradient for number of batches")
     return parser
@@ -201,14 +206,24 @@ def get_config():
     torch.set_num_threads(args.workers)
 
     timestr = time.strftime("%Y%m%d-%H%M%S")
-    if args.savedir is None:
-        args.savedir = '{}_{}x{}_{}_{}'.format(args.mode,
-                                               args.resize1[0][1], args.resize1[0][0],
-                                               os.path.basename(os.path.dirname(args.data)),
-                                               timestr)
-    elif not os.path.exists(args.savedir):
+    if args.mode == 'train':
+        model_dir = '{}_{}x{}_{}'.format(os.path.basename(os.path.dirname(args.data)),
+                                         args.resize1[0], args.resize1[1],
+                                         timestr)
+    else:
+        model_dir = ''
+    if args.model_dir is None:
+        args.model_dir = model_dir
+    else:
+        args.model_dir = os.path.join(args.model_dir, model_dir)
+    if args.savedir is None or args.savedir == '':
+        args.savedir = args.model_dir
+    else:
+        args.savedir = os.path.join(args.savedir, model_dir)
+    if not os.path.exists(args.savedir):
         os.makedirs(args.savedir)
     if not os.path.exists(args.model_dir):
         os.makedirs(args.model_dir)
+
 
     return args, parser

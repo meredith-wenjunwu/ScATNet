@@ -1,9 +1,10 @@
 import torch
-from os.path import basename, dirname, join, splitext
+from os.path import basename, dirname, join, splitext, exists
 from torch.utils.data import Dataset
 from PIL import Image
 Image.MAX_IMAGE_PIXELS = 2000000000
 import numpy as np
+import pickle
 import torchvision.transforms as transforms
 from dataset.transforms import DivideToCrops, DivideToScales, RandomCrop, Normalize, ToTensor, Resize, Zooming, EvalResize, KCrops
 from dataset.transforms import CenterCrop,NumpyToTensor
@@ -12,7 +13,7 @@ import pdb
 imagenet_normalization = Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
 
-class MultiScaleDataset(Dataset):
+class MultiScaleAttnDataset(Dataset):
     def __init__(self, opts, datasetfile,
                  datatype='train',
                  binarized_data=False,
@@ -28,6 +29,27 @@ class MultiScaleDataset(Dataset):
         self.binarized_data = binarized_data
         self.scale_indices = [int(s) for s in opts['resize1_scale']]
 
+        if 'binarized' in self.opts['data']:
+            self.patch_num = [np.sqrt(int(self.opts['data'].split('/')[-2])).astype(np.int32)]
+        elif 'multi_scale' in self.opts['data']:
+            if '3scale' in self.opts['data']:
+                self.patch_num = [5, 7, 9]
+            else:
+                self.patch_num = []
+                if '7.5' in self.opts['data']:
+                    self.patch_num.append(5)
+                if '10' in self.opts['data']:
+                    self.patch_num.append(7)
+                if '12.5' in self.opts['data']:
+                    self.patch_num.append(9)
+            
+        # check if every image has its corresponding attention map
+        img_list = []
+        for img_path in self.image_list:
+            im_ind = splitext(basename(img_path.split(';')[0]))[0]
+            if exists(join(self.opts['attn'], im_ind+'.pickle')):
+                img_list.append(img_path)
+        self.image_list = img_list
 
     def training_transforms(self, crop_size):
         msc_transform = DivideToScales if self.opts['transform'] == 'DivideToScale' else Zooming
@@ -111,6 +133,14 @@ class MultiScaleDataset(Dataset):
             mask_path = join(self.maskfolder, stage,
                              im_ind.split('_z0')[0].replace('S2_','') + '_z0','{}.png'.format(im_ind))
             mask = Image.open(mask_path).convert('L')
+        
+        with open(join(self.opts['attn'], im_ind+'.pickle'), 'rb') as handle:
+            attn_map = pickle.load(handle)
+        if np.isnan(attn_map[5]).any():
+            # some slices don't have super melanocytes. attn_map will be nan.
+            with open(join(self.opts['attn'].replace('super_melanocyte_area', 'melanocyte_num'), im_ind+'.pickle'), 'rb') as handle:
+                attn_map = pickle.load(handle) 
+        attn_map = [attn_map[p] for p in self.patch_num]
 
         #transform_sample = self.transform
         sample = {'image': image, 'mask': mask}
@@ -131,7 +161,7 @@ class MultiScaleDataset(Dataset):
                 print(img_path)
                 exit()
 
-        return sample['image'], label, return_label, img_path, sample['mask'] if sample['mask'] is not None else -1, -1
+        return sample['image'], label, return_label, img_path, sample['mask'] if sample['mask'] is not None else -1, attn_map
 
     def inverse_normalize_image(self, image_tensor, mask, im_ind):
         from os import path
@@ -150,3 +180,40 @@ class MultiScaleDataset(Dataset):
             mask = Image.fromarray(mask)
             mask.save(path.join('/projects/patho1/melanoma_diagnosis/vis/debug/', 'mask_' + im_ind))
         return
+
+
+if __name__ == '__main__':
+    import json
+    import pdb
+    import os.path as path
+    from torch.utils.data import DataLoader
+    from dataset.sampler.variable_batch_sampler import VariableBatchSampler as VBS
+
+    opts = json.load(open('../example_3scale.json'))
+    train_set = MultiScaleAttnDataset(opts=opts,
+                                    datasetfile=path.join(opts['data'], 'train.txt'),
+                                    datatype='train',
+                                    binarized_data=opts['binarize'])
+    im_width = opts['resize1'][1]
+    im_height = opts['resize1'][0]
+    crop_width = opts['resize2'][1]
+    crop_height = opts['resize2'][0]
+    train_sampler = VBS(n_data_samples=len(train_set),
+                        is_training=True,
+                        batch_size=opts['batch_size'],
+                        im_width=im_width,
+                        im_height=im_height,
+                        crop_width=crop_width,
+                        crop_height=crop_height)
+    train_loader = DataLoader(dataset=train_set,
+                              batch_size=1,  # Handled inside data sampler
+                              num_workers=opts['workers'],
+                              pin_memory=False,
+                              batch_sampler=train_sampler,
+                              persistent_workers=False
+                              )
+    
+    for data in train_loader:
+        image, label, return_label, img_path, mask, attn_map = data
+        pdb.set_trace()
+        print(label)

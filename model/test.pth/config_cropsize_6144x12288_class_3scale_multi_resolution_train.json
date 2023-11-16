@@ -1,0 +1,89 @@
+{
+    "adam_beta1": 0.9,
+    "adam_beta2": 0.999,
+    "aggregate_batch": 8,
+    "attn": "/projects/patho4/Kechun/diagnosis/melanocyte_attention/dataset/attention_maps/super_melanocyte_area",
+    "attn_guide": true,
+    "attn_head": 2,
+    "base_extractor": "mobilenetv2",
+    "batch_size": 12,
+    "binarize": true,
+    "channels": 3,
+    "data": "/projects/patho2/melanoma_diagnosis/x10/multi_scale/3scale/",
+    "dataset_crop": [
+        1,
+        0,
+        1.0
+    ],
+    "drop_out": 0.25,
+    "epochs": 200,
+    "evaluate_by_case": false,
+    "finetune": false,
+    "finetune_base_extractor": false,
+    "gpu_id": [
+        0
+    ],
+    "head_dim": 32,
+    "in_dim": 1280,
+    "linear_channel": 4,
+    "load_config": null,
+    "loss_function": "bce",
+    "lr": 0.0,
+    "lr_decay": 0.5,
+    "mask": null,
+    "mask_threshold": 0.4,
+    "mask_type": null,
+    "max_bsz_cnn_gpu0": 100,
+    "mixed_precision": false,
+    "mode": "train",
+    "model": "multi_resolution",
+    "model_dim": 128,
+    "model_dir": "./model/test.pth",
+    "n_layers": 4,
+    "num_classes": 4,
+    "num_crops": [
+        7
+    ],
+    "num_scale_attn_layer": 2,
+    "optim": "sgd",
+    "patience": 50,
+    "resize1": [
+        6144,
+        12288
+    ],
+    "resize1_scale": [
+        0.0,
+        1.0,
+        2.0
+    ],
+    "resize2": [
+        512,
+        512
+    ],
+    "resize2_scale": [
+        1.0
+    ],
+    "resume": null,
+    "s": 2.0,
+    "save_name": "3scale_3scale_128x4_weighted_dropout0.25",
+    "save_result": false,
+    "save_top_k": false,
+    "savedir": "../model/binarized/10x",
+    "scheduler": "step",
+    "seed": 1669,
+    "self_attention": false,
+    "smoothing": 0.1,
+    "start_epoch": 0,
+    "transform": "DivideToScale",
+    "use_gpu": true,
+    "use_parallel": true,
+    "use_standard_emb": false,
+    "variational_dropout": false,
+    "visdom": false,
+    "visdom_port": 8097,
+    "warmup": false,
+    "weight_decay": 4e-06,
+    "weight_tie": true,
+    "weights": "model/pretrained_cnn_models/mobilenetv2_s_1.0_imagenet_224x224.pth",
+    "workers": 2
+}

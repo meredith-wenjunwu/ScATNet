@@ -1,4 +1,5 @@
 from dataset.multi_scale_dataset import MultiScaleDataset
+from dataset.multi_scale_attn_dataset import MultiScaleAttnDataset
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 from os import path
@@ -8,19 +9,34 @@ import pdb
 from dataset.sampler.variable_batch_sampler import VariableBatchSampler as VBS
 
 def create_datasets(opts):
-    train_set = MultiScaleDataset(opts=opts,
-                                  datasetfile=path.join(opts['data'], 'train.txt'),
-                                  datatype='train',
-                                  binarized_data=opts['binarize'])
+    if not opts['attn_guide']:
+        train_set = MultiScaleDataset(opts=opts,
+                                    datasetfile=path.join(opts['data'], 'train.txt'),
+                                    datatype='train',
+                                    binarized_data=opts['binarize'])
 
-    val_set = MultiScaleDataset(opts=opts,
-                                datasetfile=path.join(opts['data'], 'valid.txt'),
-                                datatype='valid',
+        val_set = MultiScaleDataset(opts=opts,
+                                    datasetfile=path.join(opts['data'], 'valid.txt'),
+                                    datatype='valid',
+                                    binarized_data=opts['binarize'])
+        test_set = MultiScaleDataset(opts=opts,
+                                    datasetfile=path.join(opts['data'], 'test.txt'),
+                                    datatype='valid',
+                                    binarized_data=opts['binarize'])
+    else:
+        train_set = MultiScaleAttnDataset(opts=opts,
+                                datasetfile=path.join(opts['data'], 'train.txt'),
+                                datatype='train',
                                 binarized_data=opts['binarize'])
-    test_set = MultiScaleDataset(opts=opts,
-                                 datasetfile=path.join(opts['data'], 'test.txt'),
-                                 datatype='valid',
-                                 binarized_data=opts['binarize'])
+
+        val_set = MultiScaleAttnDataset(opts=opts,
+                                    datasetfile=path.join(opts['data'], 'valid.txt'),
+                                    datatype='valid',
+                                    binarized_data=opts['binarize'])
+        test_set = MultiScaleAttnDataset(opts=opts,
+                                    datasetfile=path.join(opts['data'], 'test.txt'),
+                                    datatype='valid',
+                                    binarized_data=opts['binarize'])
 
     return train_set, val_set, test_set
 

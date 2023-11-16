@@ -6,7 +6,9 @@ import os
 from torch import nn
 from experiment.EMA import EMA
 from utilities.visualize import compute_stats, compute_case, visualize_top_k_crop
+from dataset.dataloaders import sliding_dataloader
 import numpy as np
+import json
 import pdb
 
 
@@ -61,13 +63,17 @@ class experiment_engine(object):
 
     def train(self, model, epochs, criterion,
               optimizer, scheduler=None,
-              start_epoch=0, feature_extractor=None,):
+              start_epoch=0, feature_extractor=None, **kwargs):
 
         model.train()
         val_loss_min = 10000
         val_acc_max = -1
         step = 0
+        eval_stats_dict = dict()
         self.EMA1 = EMA(model, ema_momentum=0.001)
+        use_attn_guide = kwargs.get('attn_guide', False)
+        criterion_attn = kwargs.get('criterion_attn', None)
+        lambda_attn = kwargs.get('lambda_attn', 0)
         for epoch in range(start_epoch, epochs):
             model.train()
             if self.visdom:
@@ -77,7 +83,7 @@ class experiment_engine(object):
             scores = []
             target = []
             optimizer.zero_grad()
-            for i, (multi_data, labels, labels_conf, paths, mask) in tqdm.tqdm(enumerate(self.train_loader), leave=False, total=len(self.train_loader)):
+            for i, (multi_data, labels, labels_conf, paths, mask, attn_mask) in tqdm.tqdm(enumerate(self.train_loader), leave=False, total=len(self.train_loader)):
                 step += 1
                 if self.warmup and step < 500:
                     lr_scale = min(1., float(step + 1) / 500.)
@@ -95,13 +101,20 @@ class experiment_engine(object):
                     multi_feat, mask, labels_conf = self.multi_scale_features(multi_data=multi_data,
                                                                           feature_extractor=feature_extractor,
                                                                           mask=mask, labels_conf=labels_conf)
+                    attn_mask = [s.float().to(self.gpu_id[0]) for s in attn_mask]
                 else:
                     # [B x C x F] x Scales
                     labels_conf = labels_conf.to(device=self.gpu_id[0])
                     multi_feat = [d.to(device=self.gpu_id[0]) for d in multi_data]
                     mask=None
-                out, _, _ = model(x=multi_feat, src_mask=mask)
+                    attn_mask = [m.float().to(device=self.gpu_id[0]) for m in attn_mask]
+                out, _, _, attn_over_layers = model(x=multi_feat, src_mask=mask)
                 loss = criterion(out, labels_conf)
+                if use_attn_guide:
+                    attn_guide_loss = criterion_attn(attn_over_layers, attn_mask)
+                    if torch.isnan(attn_guide_loss):
+                        pdb.set_trace()
+                    loss += lambda_attn * attn_guide_loss
                 loss.backward()
                 if (i + 1) % self.aggregate_batch == 0 or (i + 1) == len(self.train_loader):
                     optimizer.step()
@@ -123,23 +136,40 @@ class experiment_engine(object):
                 print('loss: {:0.23f}'.format(epoch_loss/len(self.train_loader)))
                 print_report(output, target, name='Train', epoch=epoch)
 
-            val_loss, val_acc = self.eval(model, criterion,
+            val_loss, val_acc, summary = self.eval(model, criterion,
                                  epoch=epoch, mode='val', feature_extractor=feature_extractor)
+            _, val_train_acc, summary2 = self.eval(model, criterion,
+                                                   epoch=epoch, mode='train', feature_extractor=feature_extractor)
+            v_acc = (val_acc +val_train_acc)/2
+            eval_stats_dict[epoch] = (summary, summary2)
             if step > 500 and self.scheduler == 'reduce':
                 scheduler.step(val_loss)
-            ema_val_loss, ema_val_acc = self.eval(self.EMA1.ema_model, criterion, epoch=epoch, mode='ema',
-                                                  feature_extractor=feature_extractor)
-            if val_acc >= val_acc_max:
+            # ema_val_loss, ema_val_acc = self.eval(self.EMA1.ema_model, criterion, epoch=epoch, mode='ema',
+            #                                       feature_extractor=feature_extractor)
+            if v_acc >= val_acc_max:
                 # self.eval(model, criterion,
                 #           epoch=epoch, mode='test', feature_extractor=feature_extractor)
                 print('Valid acc increased ({:.6f} --> {:.6f}).  Saving model...'.format(val_acc_max, val_acc))
+                self.save_model(model, 'best', v_acc)
             self.save_model(model, epoch, val_acc)
-            if val_acc > val_acc_max:
-                val_acc_max = val_acc
+            if v_acc > val_acc_max:
+                val_acc_max = v_acc
             elif val_loss < val_loss_min:
                 val_loss_min = val_loss
 
-        self.logger.close()
+        if self.visdom:
+            self.logger.close()
+
+        eval_stats_fname = '{}/val_stats_{}'.format(self.savedir, self.save_name)
+        if not os.path.isfile(eval_stats_fname):
+            with open(eval_stats_fname, 'w') as json_file:
+                json.dump(eval_stats_dict, json_file)
+        else:
+            with open(eval_stats_fname, 'r') as json_file:
+                eval_stats_dict_old = json.load(json_file)
+            eval_stats_dict_old.update(eval_stats_dict)
+            with open(eval_stats_fname, 'w') as json_file:
+                json.dump(eval_stats_dict, json_file)
 
 
 
@@ -196,11 +226,99 @@ class experiment_engine(object):
 
 
     def eval(self, model, criterion,
-             epoch=None, mode='val', feature_extractor=None):
+             epoch=None, mode='val', feature_extractor=None,
+             sliding_window=False):
+        if sliding_window:
+            return self.eval_sliding(model, criterion, epoch=epoch,
+                                     mode=mode, feature_extractor=feature_extractor)
+        else:
+            return self.eval_crop(model, criterion, epoch=epoch,
+                                mode=mode, feature_extractor=feature_extractor)
 
-        return self.eval_crop(model, criterion, epoch=epoch,
-                              mode=mode, feature_extractor=feature_extractor)
+    def eval_sliding(self, model, criterion,
+                     epoch=None,  mode='val', feature_extractor=None):
+        if 'val' in mode or 'ema' in mode:
+            dataset = self.val_loader
+        elif 'test' in mode:
+            dataset = self.test_loader
+        elif 'train' in mode:
+            dataset = self.train_loader
+        else:
+            import sys
+            sys.exit('Wrong evaluation mode. Choices are val or test, got "{}"'.format(mode))
+        model.eval()
+        val_target = []
+        val_output_ensemble = []
+        val_loss = []
+        scores = []
+        scale_attns = []
+        if self.visdom:
+            self.confusion_meter.reset()
+        with torch.no_grad():
+            for i, d_set in tqdm.tqdm(enumerate(dataset), leave=False, total=len(dataset)):
+                dataloader = sliding_dataloader(dataset, i)
+                case_score = []
+                case_predicted = []
+                case_loss = []
+                case_probabilities = []
+                case_scale_attn = []
+                for i, (multi_data, target, target_conf, paths, mask, age) in tqdm.tqdm(enumerate(dataloader),
+                                                                                 leave=False,
+                                                                                 total=len(dataloader)):
+                    if i == 0:
+                        val_target.extend(t.item() for t in target)
 
+                    multi_feat, mask, labels_conf = self.multi_scale_features(multi_data=multi_data,
+                                                                              feature_extractor=feature_extractor,
+                                                                              mask=mask, labels_conf=target_conf)
+                    output, output_vis, scale_attn= model(x=multi_feat, src_mask=mask, age=age)
+                    probabilities = nn.Softmax(dim=-1)(output.detach().cpu())
+                    scale_attn = scale_attn.detach().cpu()
+                    if len(scale_attn.shape) > 2:
+                        scale_attn = scale_attn.squeeze(2)[0]
+                    case_scale_attn.append(scale_attn.tolist())
+                    case_probabilities.append(probabilities.detach().cpu().tolist()[0])
+                    case_score.append(output.detach().cpu().tolist()[0])
+                    case_loss.append(criterion(output, labels_conf).detach().cpu().item())
+                    _, predicted = torch.max(output.data, 1)
+                    case_predicted.extend(predicted.detach().cpu().tolist())
+                val_loss.append(np.mean(case_loss))
+                scores.append(np.mean(case_score, axis=0))
+                scale_attns.append(np.mean(case_scale_attn, axis=0))
+                max_output = np.max(case_predicted)
+                ind_max = np.argmax(case_predicted)
+                val_output_ensemble.append(max_output)
+
+                if self.save_result:
+                    with open(os.path.join(self.savedir, 'result.txt'), 'a') as f:
+                        f.write('{}; {}; {}; {}\n'.format(paths[0], int(max_output),
+                                                      case_probabilities[ind_max], list(np.mean(case_scale_attn, axis=0))))
+
+                if self.visdom:
+                    self.confusion_meter.add(predicted, target)
+
+        val_loss = np.mean(val_loss)
+        scores = np.stack(scores)
+        val_output = np.argmax(scores, axis=1)
+        val_acc = accuracy_score(val_target, val_output_ensemble)
+        if self.mode == 'test' or self.mode == 'valid':
+            sp = self.savedir
+        else:
+            sp = None
+        if self.visdom:
+            self.logger.update(epoch, val_loss/len(dataloader), mode='{}_loss'.format(mode))
+            self.logger.update(epoch, val_acc, mode='{}_err'.format(mode))
+            self.logger.update(epoch, self.confusion_meter.value(), mode='{}_mat'.format(mode))
+        else:
+            compute_stats(y_true=val_target, y_pred=val_output, y_prob=None, logger=None,
+                          mode='{}_roc'.format(mode), num_classes=self.num_classes,
+                          savepath=sp, fname=self.save_name)
+            name = 'Valid' if mode == 'val' else 'Test'
+            print_report(val_output, val_target, name=name+'_average', epoch=epoch)
+            print_report(val_output_ensemble, val_target, name=name+'_max', epoch=epoch)
+
+        return val_loss/len(dataloader), val_acc
+    
     def eval_crop(self, model, criterion,
                   epoch=None, mode='val', feature_extractor=None):
         if 'val' in mode or 'ema' in mode:
@@ -218,12 +336,11 @@ class experiment_engine(object):
         val_output = []
         val_loss = 0
         scores = []
-        if self.evaluate_by_case:
-            results_list = []
+        results_list = []
         if self.visdom:
             self.confusion_meter.reset()
         with torch.no_grad():
-            for i, (multi_data, target, target_conf, paths, mask) in tqdm.tqdm(enumerate(dataloader),
+            for i, (multi_data, target, target_conf, paths, mask, attn_mask) in tqdm.tqdm(enumerate(dataloader),
                                                                                leave=False,
                                                                                total=max(1, len(dataloader))):
                 val_target.extend(t.item() for t in target)
@@ -239,7 +356,7 @@ class experiment_engine(object):
                     multi_feat = [d.to(device=self.gpu_id[0]) for d in multi_data]
                     mask = None
 
-                output, output_vis, scale_attn = model(x=multi_feat, src_mask=mask)
+                output, output_vis, scale_attn, _ = model(x=multi_feat, src_mask=mask)
 
                 if self.loss_function != 'bce':
                     probabilities = nn.Softmax(dim=-1)(output.detach().cpu())
@@ -249,9 +366,8 @@ class experiment_engine(object):
                 val_loss += criterion(output, labels_conf).detach().cpu().item()
                 _, predicted = torch.max(output.data, 1)
                 val_output.extend(predicted.detach().cpu().tolist())
-                if self.evaluate_by_case:
-                    for j in range(len(paths)):
-                        results_list.append((paths[j], int(target[j].item()), int(predicted[j].item())))
+                for j in range(len(paths)):
+                    results_list.append((paths[j], int(target[j].item()), int(predicted[j].item())))
                 if self.save_top_k > 0:
                     visualize_top_k_crop(multi_data, self.save_top_k,
                                          predicted, target, output_vis,
@@ -276,13 +392,14 @@ class experiment_engine(object):
         pred_label_max = pred_label_max1.byte().cpu().numpy().tolist()  # Image x 1
         pred_conf_max = predictions_max_sm.float().cpu().numpy()  # Image x Classes
         val_acc = accuracy_score(val_target, val_output)
-        if self.evaluate_by_case:
-            val_acc = compute_case(results_list, pred_conf_max, verbose=(epoch is None), mode=mode,
-                                   savepath=self.savedir, save=self.save_result)
+        
         if self.mode == 'test' or self.mode == 'valid':
             sp = self.savedir
         else:
             sp = None
+        
+        val_acc, results_summary = compute_case(results_list, pred_conf_max, verbose=(epoch is None), mode=mode,
+                                   savepath=self.savedir, save=self.save_result)
         if self.visdom:
             self.logger.update(epoch, val_loss / max(1,len(dataloader)), mode='{}_loss'.format(mode))
             self.logger.update(epoch, val_acc, mode='{}_err'.format(mode))
@@ -293,6 +410,6 @@ class experiment_engine(object):
                           savepath=sp, fname=self.save_name)
             name = 'Valid' if mode == 'val' else 'Test'
             print_report(val_output, val_target, name=name, epoch=epoch)
-        return val_loss / max(1, len(dataloader)), val_acc
+        return val_loss / max(1, len(dataloader)), val_acc, results_summary
 
 

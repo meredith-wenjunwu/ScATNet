@@ -3,6 +3,8 @@ from torch import nn, Tensor
 import math
 from typing import Optional, List
 import pdb
+import sys
+sys.path.append('../')
 from model.modules.positional_embedding import PositionalEncoding
 from model.drop_layers import RecurrentDropout
 
@@ -141,12 +143,15 @@ class AttentionLayer(nn.Module):
         x = self.proj_cnn_emb(x) * self.scaling
         x = self.pos_emb(x) + scale_enc if scale_enc is not None else self.pos_emb(x)
         x = self.emb_drop(x)
-        x = self.attn(x)
+        attn_over_layers = []
+        for l in self.attn:
+            x, attn_wts = l(x, need_attn_wts=True)
+            attn_over_layers.append(attn_wts)
         out_vis = torch.sum(x ** 2, dim=-1, keepdim=True) / x.size(-1)
         out_vis = out_vis ** 0.5
         x = torch.mean(x, dim=1)
         x = self.proj_attn_emb(x)
-        return x, out_vis
+        return x, out_vis, attn_over_layers
 
 
 class MultiScaleAttention(nn.Module):
@@ -257,26 +262,30 @@ class MultiScaleAttention(nn.Module):
         scale_attn_vis = []
         attn = None
         scale_embeds = []
+        scale_attn_wts = []
         bsz = x[0].size(0)
         device = x[0].device
         '''Added Index Scale Position Encoding'''
         if self.weight_tying:
             for x_s in x:
                 # Batch x Crops x Feature
-                out, out_vis = self.scale_wise_attn(x_s)
+                out, out_vis, attn_over_layers = self.scale_wise_attn(x_s)
                 scale_embeds.append(out)
                 scale_attn_vis.append(out_vis)
+                scale_attn_wts.append(attn_over_layers)
             out = torch.stack(scale_embeds, dim=1)
         else:
             scale_embeds = []
             scale_idx = 0
             for x_s, layer in zip(x, self.scale_wise_attn):
-                out, out_vis = layer(x=x_s)
+                out, out_vis, attn_over_layers = layer(x=x_s)
                 scale_embeds.append(out)
                 scale_attn_vis.append(out_vis)
+                scale_attn_wts.append(attn_over_layers)
                 scale_idx += 1
             out = torch.stack(scale_embeds, dim=1)
 
+        '''Attend over scales if doing multi-scale'''
         if self.num_scales > 1:
             # [B x Scales x features]
             # scale_encodings = self.scale_encodings(bsz, device=device)
@@ -302,7 +311,8 @@ class MultiScaleAttention(nn.Module):
         else:
             out = out.contiguous().view(out.size(0), -1)
         out = self.classifier(out)
-        return out, scale_attn_vis, attn  # .unsqueeze(0)
+
+        return out, scale_attn_vis, attn, scale_attn_wts  # .unsqueeze(0)
 
 
 if __name__ == "__main__":
@@ -321,10 +331,11 @@ if __name__ == "__main__":
     configs['variational_dropout'] = False
     configs['num_scale_attn_layer'] = 2
     configs['use_standard_emb'] = 1
+    configs['attn_head'] = 2
 
     layer = MultiScaleAttention(configs)
 
     # [B x C x F] x Scales
-    inp_tensor = [torch.Tensor(1, 49, 1280)]
+    inp_tensor = [torch.Tensor(10, 49, 1280)]
     out = layer(inp_tensor)
     print('final: {}'.format(out[0].shape))
