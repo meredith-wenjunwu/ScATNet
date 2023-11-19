@@ -171,9 +171,9 @@ def build_dataset(opts):
     # Preparing Dataset
     # -----------------------------------------------------------------------------
     # data_transforms = build_melanoma_transforms(opts) if opts['dataset'] == 'melanoma' else build_breast_transforms(opts)
-    train_set, valid_set, test_set = create_datasets(opts)
-    train_loader, valid_loader, test_loader = create_dataloader(train_set, valid_set, test_set, opts=opts)
-    return train_loader, valid_loader, test_loader
+    train_set, valid_set, merge_train_valid_set, test_set = create_datasets(opts)
+    train_loader, valid_loader, train_valid_loader, test_loader = create_dataloader(train_set, valid_set, merge_train_valid_set, test_set, opts=opts)
+    return train_loader, valid_loader, train_valid_loader, test_loader
 
 
 def build_model(opts):
@@ -198,7 +198,7 @@ def build_model(opts):
     if opts['base_extractor'] != None:
         feature_extractor = BaseFeatureExtractor(opts)
         feature_extractor.eval()
-    if opts['resume'] is not None:
+    if opts['resume'] is not None and opts['resume'] != '':
         saved_dict = torch.load(opts['resume'])
     if opts['use_gpu'] and len(opts['gpu_id']) > 0:
         if opts['use_parallel']:
@@ -211,7 +211,7 @@ def build_model(opts):
         if feature_extractor is not None:
             feature_extractor.to(opts['cuda'])
             #print(feature_extractor is None)
-        if opts['resume'] is not None:
+        if opts['resume'] is not None and opts['resume'] != '':
             print_info_message('Loaded Model')
             model.load_state_dict(saved_dict)
         if len(opts['gpu_id']) == 1 and opts['model'] != 'kmeans':
@@ -226,7 +226,7 @@ def build_model(opts):
         #     new_state_dict[name] = v
         #     # load params
         # saved_dict = new_state_dict
-    if opts['resume'] is not None:
+    if opts['resume'] is not None and opts['resume'] != '':
         model.load_state_dict(saved_dict)
     if opts['finetune']:
         print_info_message('Freezing batch normalization layers in model')

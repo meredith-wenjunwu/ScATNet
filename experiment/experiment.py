@@ -12,9 +12,10 @@ import pdb
 
 class experiment_engine(object):
     def __init__(self, train_loader,
-                 val_loader, test_loader, **args):
+                 val_loader, train_val_loader, test_loader, **args):
         self.train_loader = train_loader
         self.val_loader = val_loader
+        self.train_val_loader = train_val_loader
         self.test_loader = test_loader
         self.__dict__.update(**args)
         # moving average of all
@@ -61,13 +62,19 @@ class experiment_engine(object):
 
     def train(self, model, epochs, criterion,
               optimizer, scheduler=None,
-              start_epoch=0, feature_extractor=None,):
+              start_epoch=0, feature_extractor=None, **kwargs):
 
         model.train()
         val_loss_min = 10000
         val_acc_max = -1
         step = 0
         self.EMA1 = EMA(model, ema_momentum=0.001)
+
+        if kwargs['mode'] == 'train':
+            dataloader = self.train_loader
+        elif kwargs['mode'] == 'merge-train-valid':
+            dataloader = self.train_val_loader
+
         for epoch in range(start_epoch, epochs):
             model.train()
             if self.visdom:
@@ -77,7 +84,7 @@ class experiment_engine(object):
             scores = []
             target = []
             optimizer.zero_grad()
-            for i, (multi_data, labels, labels_conf, paths, mask) in tqdm.tqdm(enumerate(self.train_loader), leave=False, total=len(self.train_loader)):
+            for i, (multi_data, labels, labels_conf, paths, mask) in tqdm.tqdm(enumerate(dataloader), leave=False, total=len(dataloader)):
                 step += 1
                 if self.warmup and step < 500:
                     lr_scale = min(1., float(step + 1) / 500.)
@@ -103,7 +110,7 @@ class experiment_engine(object):
                 out, _, _ = model(x=multi_feat, src_mask=mask)
                 loss = criterion(out, labels_conf)
                 loss.backward()
-                if (i + 1) % self.aggregate_batch == 0 or (i + 1) == len(self.train_loader):
+                if (i + 1) % self.aggregate_batch == 0 or (i + 1) == len(dataloader):
                     optimizer.step()
                     self.EMA1.update_parameters(model)
                     optimizer.zero_grad()
@@ -114,21 +121,19 @@ class experiment_engine(object):
                 if self.visdom:
                     self.confusion_meter.add(predicted, labels)
             if self.visdom:
-                self.logger.update(epoch, epoch_loss/len(self.train_loader), mode='train_loss')
+                self.logger.update(epoch, epoch_loss/len(dataloader), mode='train_loss')
                 train_acc = accuracy_score(target, output)
                 self.logger.update(epoch, train_acc, mode='train_err')
                 self.logger.update(epoch, self.confusion_meter.value(), mode='train_mat')
 
             else:
-                print('loss: {:0.23f}'.format(epoch_loss/len(self.train_loader)))
+                print('loss: {:0.23f}'.format(epoch_loss/len(dataloader)))
                 print_report(output, target, name='Train', epoch=epoch)
 
-            val_loss, val_acc = self.eval(model, criterion,
-                                 epoch=epoch, mode='val', feature_extractor=feature_extractor)
+            val_loss, val_acc, summary = self.eval(model, criterion,
+                                 epoch=epoch, mode='merge-train-valid', feature_extractor=feature_extractor)
             if step > 500 and self.scheduler == 'reduce':
                 scheduler.step(val_loss)
-            ema_val_loss, ema_val_acc = self.eval(self.EMA1.ema_model, criterion, epoch=epoch, mode='ema',
-                                                  feature_extractor=feature_extractor)
             if val_acc >= val_acc_max:
                 # self.eval(model, criterion,
                 #           epoch=epoch, mode='test', feature_extractor=feature_extractor)
@@ -203,7 +208,9 @@ class experiment_engine(object):
 
     def eval_crop(self, model, criterion,
                   epoch=None, mode='val', feature_extractor=None):
-        if 'val' in mode or 'ema' in mode:
+        if 'merge-train-valid' in mode:
+            dataloader = self.train_val_loader
+        elif 'val' in mode or 'ema' in mode:
             dataloader = self.val_loader
         elif 'test' in mode:
             dataloader = self.test_loader
@@ -218,8 +225,7 @@ class experiment_engine(object):
         val_output = []
         val_loss = 0
         scores = []
-        if self.evaluate_by_case:
-            results_list = []
+        results_list = []
         if self.visdom:
             self.confusion_meter.reset()
         with torch.no_grad():
@@ -249,9 +255,8 @@ class experiment_engine(object):
                 val_loss += criterion(output, labels_conf).detach().cpu().item()
                 _, predicted = torch.max(output.data, 1)
                 val_output.extend(predicted.detach().cpu().tolist())
-                if self.evaluate_by_case:
-                    for j in range(len(paths)):
-                        results_list.append((paths[j], int(target[j].item()), int(predicted[j].item())))
+                for j in range(len(paths)):
+                    results_list.append((paths[j], int(target[j].item()), int(predicted[j].item())))
                 if self.save_top_k > 0:
                     visualize_top_k_crop(multi_data, self.save_top_k,
                                          predicted, target, output_vis,
@@ -275,9 +280,9 @@ class experiment_engine(object):
         pred_label_max1 = torch.max(predictions_max_sm, dim=-1)[1]  # Image x 1
         pred_label_max = pred_label_max1.byte().cpu().numpy().tolist()  # Image x 1
         pred_conf_max = predictions_max_sm.float().cpu().numpy()  # Image x Classes
-        val_acc = accuracy_score(val_target, val_output)
-        if self.evaluate_by_case:
-            val_acc = compute_case(results_list, pred_conf_max, verbose=(epoch is None), mode=mode,
+        # val_acc = accuracy_score(val_target, val_output)
+        
+        val_acc, results_summary = compute_case(results_list, pred_conf_max, verbose=(epoch is None), mode=mode,
                                    savepath=self.savedir, save=self.save_result)
         if self.mode == 'test' or self.mode == 'valid':
             sp = self.savedir
@@ -293,6 +298,6 @@ class experiment_engine(object):
                           savepath=sp, fname=self.save_name)
             name = 'Valid' if mode == 'val' else 'Test'
             print_report(val_output, val_target, name=name, epoch=epoch)
-        return val_loss / max(1, len(dataloader)), val_acc
+        return val_loss / max(1, len(dataloader)), val_acc, results_summary
 
 

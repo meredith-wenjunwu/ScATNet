@@ -1,5 +1,5 @@
 from dataset.multi_scale_dataset import MultiScaleDataset
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, ConcatDataset
 from torch.utils.data.sampler import SubsetRandomSampler
 from os import path
 from typing import Optional, List
@@ -21,11 +21,13 @@ def create_datasets(opts):
                                  datasetfile=path.join(opts['data'], 'test.txt'),
                                  datatype='valid',
                                  binarized_data=opts['binarize'])
+    merge_train_val_set = MultiScaleDataset(opts=opts, datasetfile=[path.join(opts['data'], 'train.txt'), path.join(opts['data'], 'valid.txt')],
+                                            datatype='train', binarized_data=opts['binarize'])
 
-    return train_set, val_set, test_set
+    return train_set, val_set, merge_train_val_set, test_set
 
 
-def create_dataloader(train_set, val_set, test_set, opts):
+def create_dataloader(train_set, val_set, merge_train_val_set, test_set, opts):
     seed_everything(opts)
     #train_sampler = SubsetRandomSampler(list(range(len(train_set))))
 
@@ -54,6 +56,14 @@ def create_dataloader(train_set, val_set, test_set, opts):
                         )
     test_sampler = VBS(n_data_samples=len(test_set), is_training=False, batch_size=1,
                        im_width=im_width, im_height=im_height, crop_width=crop_width, crop_height=crop_height)
+    
+    train_valid_sampler = VBS(n_data_samples=len(merge_train_val_set),
+                        is_training=True,
+                        batch_size=opts['batch_size'],
+                        im_width=im_width,
+                        im_height=im_height,
+                        crop_width=crop_width,
+                        crop_height=crop_height)
     """
     train_loader = DataLoader(train_set, batch_size=opts['batch_size'],
                               sampler=train_sampler,
@@ -76,6 +86,14 @@ def create_dataloader(train_set, val_set, test_set, opts):
                               batch_sampler=valid_sampler,
                               persistent_workers=False
                               )
+    
+    train_valid_loader = DataLoader(dataset=merge_train_val_set,
+                              batch_size=1,  # Handled inside data sampler
+                              num_workers=opts['workers'],
+                              pin_memory=False,
+                              batch_sampler=train_valid_sampler,
+                              persistent_workers=False
+                              )
     """
     valid_loader = DataLoader(val_set, batch_size=opts['batch_size'],
                               sampler=valid_sampler,
@@ -95,7 +113,7 @@ def create_dataloader(train_set, val_set, test_set, opts):
                               persistent_workers=False
                               )
 
-    return train_loader, valid_loader, test_loader
+    return train_loader, valid_loader, train_valid_loader, test_loader
 
 
 def sliding_dataloader(dataset, index):

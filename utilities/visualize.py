@@ -299,7 +299,7 @@ def compute_case(results_list, scores, verbose=False, savepath=None, mode=None, 
             n_classes=num_classes,
             logger=None, mode=mode,
             savepath=savepath, fname='case_level')
-    return results_summary['overall_accuracy']
+    return results_summary['overall_accuracy'], results_summary
 
 
 

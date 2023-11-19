@@ -14,7 +14,7 @@ def main(args):
     # Preparing Dataset
     # -----------------------------------------------------------------------------
     seed_everything(args)
-    train_loader, valid_loader, test_loader = build_dataset(args)
+    train_loader, valid_loader, train_valid_loader, test_loader = build_dataset(args)
     args = build_class_weights(args)
 
 
@@ -37,9 +37,9 @@ def main(args):
     # -----------------------------------------------------------------------------
 
     args = build_visualization(args)
-    engine = experiment_engine(train_loader, valid_loader,
+    engine = experiment_engine(train_loader, valid_loader, train_valid_loader,
                                test_loader, **args)
-    if opts.mode != 'kmeans':
+    if args['mode'] != 'kmeans':
         optimizer = build_optimizer(args, model)
         scheduler = build_scheduler(args, optimizer)
 
@@ -50,19 +50,30 @@ def main(args):
     if args['mode'] == 'train':
         print_info_message('Training Process Starts...')
         print_info_message("Number of Parameters: {:.2f} M".format(sum([p.numel() for p in model.parameters()])/1e6))
-        engine.train(model, args['epochs'], criterion,
+        result = engine.train(model, args['epochs'], criterion,
                      optimizer, scheduler,
-                     args['start_epoch'], feature_extractor=feature_extractor)
+                     args['start_epoch'], feature_extractor=feature_extractor, mode=args['mode'])
+    elif args['mode'] == 'merge-train-valid':
+        print_info_message('Training Process Starts... (Merge Train set and Valid set)')
+        print_info_message("Number of Parameters: {:.2f} M".format(sum([p.numel() for p in model.parameters()])/1e6))
+        result = engine.train(model, args['epochs'], criterion,
+                     optimizer, scheduler,
+                     args['start_epoch'], feature_extractor=feature_extractor, mode=args['mode'])
     elif args['mode'] == 'test':
         print_info_message('Evaluation on Test Process Starts...')
-        engine.eval(model, criterion, mode='test',
+        result = engine.eval(model, criterion, mode='test',
                     feature_extractor=feature_extractor)
     elif args['mode'] == 'valid':
         print_info_message('Evaluation on Validation Process Starts...')
-        engine.eval(model, criterion, mode='val', feature_extractor=feature_extractor)
-    elif args['mode'] == 'valid-train':
+        result = engine.eval(model, criterion, mode='val', feature_extractor=feature_extractor)
+    elif args['mode'] == 'test-on-train':
         print_info_message('Evaluation on Training Process Starts...')
-        engine.eval(model, criterion, mode= 'train', feature_extractor=feature_extractor)
+        result = engine.eval(model, criterion, mode= 'train', feature_extractor=feature_extractor)
+
+    elif args['mode'] == 'test-on-train-valid':
+        print_info_message('Evaluation on Training and Valid Process Starts...')
+        result = engine.eval(model, criterion, mode= 'merge-train-valid', feature_extractor=feature_extractor)
+    return result
 
 
 if __name__ == '__main__':

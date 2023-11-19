@@ -18,7 +18,7 @@ def size(arg):
 def general_opts(parser):
     group = parser.add_argument_group('General Options')
     group.add_argument('--load-config', default=None, type=str, help='path to config')
-    group.add_argument('--mode', default='train', choices=['train', 'test', 'valid', 'valid-train'],
+    group.add_argument('--mode', default='train', choices=['train', 'test', 'valid', 'test-on-train-valid', 'test-on-train' 'merge-train-valid'],
                         help='Experiment mode')
     group.add_argument('--resize1-scale', default=[1.0], type=float, nargs="+", help='number of scales for image')
     group.add_argument('--resize2-scale', default=[1.0], type=float, nargs="+", help='number of scales for crops')
