@@ -160,6 +160,10 @@ if __name__ == '__main__':
         print(json.dumps(result[2], indent=4, sort_keys=True))
         print('Best checkpoint for {} \n is {}'.format(os.path.basename(checkpoint_dir), os.path.basename(best_checkpt)))
         shutil.copyfile(best_checkpt, os.path.join(checkpoint_dir, 'best_model{}'.format(os.path.splitext(best_checkpt)[1])))
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/attn_guide
 
 
 
