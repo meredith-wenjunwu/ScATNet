@@ -53,13 +53,15 @@ def main(args):
         print_info_message("Number of Parameters: {:.2f} M".format(sum([p.numel() for p in model.parameters()])/1e6))
         result = engine.train(model, args['epochs'], criterion,
                      optimizer, scheduler,
-                     args['start_epoch'], feature_extractor=feature_extractor, mode=args['mode'])
-    elif args['mode'] == 'merge-train-valid':
+                     args['start_epoch'], feature_extractor=feature_extractor, mode=args['mode'], 
+                     attn_guide=args['attn_guide'], criterion_attn=attn_criterion, lambda_attn=args['lambda_attn'])
+    elif args['mode'] == 'train-on-train-valid':
         print_info_message('Training Process Starts... (Merge Train set and Valid set)')
         print_info_message("Number of Parameters: {:.2f} M".format(sum([p.numel() for p in model.parameters()])/1e6))
         result = engine.train(model, args['epochs'], criterion,
                      optimizer, scheduler,
-                     args['start_epoch'], feature_extractor=feature_extractor, mode=args['mode'])
+                     args['start_epoch'], feature_extractor=feature_extractor, mode=args['mode'],
+                     attn_guide=args['attn_guide'], criterion_attn=attn_criterion, lambda_attn=args['lambda_attn'])
     elif args['mode'] == 'test':
         print_info_message('Evaluation on Test Process Starts...')
         result = engine.eval(model, criterion, mode='test',
@@ -70,10 +72,9 @@ def main(args):
     elif args['mode'] == 'test-on-train':
         print_info_message('Evaluation on Training Process Starts...')
         result = engine.eval(model, criterion, mode= 'train', feature_extractor=feature_extractor)
-
     elif args['mode'] == 'test-on-train-valid':
         print_info_message('Evaluation on Training and Valid Process Starts...')
-        result = engine.eval(model, criterion, mode= 'merge-train-valid', feature_extractor=feature_extractor)
+        result = engine.eval(model, criterion, mode= 'train-on-train-valid', feature_extractor=feature_extractor)
     return result
 
 

@@ -82,7 +82,7 @@ def build_attn_criteria(opts):
     :return: attn loss function
     '''
     from experiment.attn_guiding import AttnGuideReg
-    criterion = AttnGuideReg(num_heads=opts['attn_head'], batch_size=opts['batch_size'], loss_type=opts['attn_loss'])
+    criterion = AttnGuideReg(num_heads=opts['attn_head'], loss_type=opts['attn_loss'])
     return criterion
 
 def build_cuda(opts):

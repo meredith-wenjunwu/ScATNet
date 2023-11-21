@@ -36,7 +36,7 @@ loss_fn='bce'
 batch_size=12
 eval_split=1
 epochs=200 # Number of training epochs
-output_dir='../model/1scale/10x/49/sma_guide_inclusion_exclusion'
+output_dir='../model/1scale/10x/49/merge_train_valid/sma_guide_inclusion_exclusion'
 # output_dir='../model/1scale/10x/49/no_attn_guide' # directory to save checkpoints
 patience=5
 scheduler='step'
@@ -52,9 +52,9 @@ optim='adam'
 
 config_file='/projects/patho2/melanoma_diagnosis/model/temp/49_6144x12288_20231113-112941/config_resize_6144x12288_crop_512_train.json'
 
-for i in {0..30}
+for i in {0..20}
 do
 python main.py --load-config $config_file --model-dir $output_dir --savedir $output_dir --epochs 200 \
---seed $RANDOM \
+--seed $RANDOM --mode train-on-train-valid \
 --attn $attn --attn_head $attn_head --lambda-attn $lambda_attn --attn-loss $attn_loss --attn_guide
 done

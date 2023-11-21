@@ -36,7 +36,7 @@ loss_fn='bce'
 batch_size=12
 eval_split=1
 epochs=200 # Number of training epochs
-output_dir='../model/1scale/10x/49/sma_guide_frobenius'
+output_dir='../model/1scale/10x/49/merge_train_valid/sma_guide_frobenius'
 # output_dir='../model/1scale/10x/49/no_attn_guide' # directory to save checkpoints
 patience=5
 scheduler='step'
@@ -52,12 +52,13 @@ optim='adam'
 
 config_file='/projects/patho2/melanoma_diagnosis/model/temp/49_6144x12288_20231113-112941/config_resize_6144x12288_crop_512_train.json'
 
-for i in {0..30}
+for i in {0..20}
 do
 python main.py --load-config $config_file --model-dir $output_dir --savedir $output_dir --epochs 200 \
---seed $RANDOM \
+--seed $RANDOM --mode train-on-train-valid \
 --attn $attn --attn_head $attn_head --lambda-attn $lambda_attn --attn-loss $attn_loss --attn_guide
 done
 
+# python main.py --load-config '/projects/patho2/melanoma_diagnosis/model/temp/49_6144x12288_20231113-112941/config_resize_6144x12288_crop_512_train.json' --model-dir ../model/1scale/10x/49/sma_guide_frobenius_fixed --savedir ../model/1scale/10x/49/sma_guide_frobenius_fixed --epochs 200 --mode train-on-train-valid --attn /projects/patho4/Kechun/diagnosis/melanocyte_attention/dataset/attention_maps/super_melanocyte_area --attn_head 2 --lambda-attn 0.1 --attn-loss Frobenius --attn_guide
 
 # python model_select.py --checkpoint-dir $output_dir --load-config  --multiple-dir

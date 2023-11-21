@@ -78,7 +78,7 @@ class experiment_engine(object):
 
         if kwargs['mode'] == 'train':
             dataloader = self.train_loader
-        elif kwargs['mode'] == 'merge-train-valid':
+        elif kwargs['mode'] == 'train-on-train-valid':
             dataloader = self.train_val_loader
 
         for epoch in range(start_epoch, epochs):
@@ -90,7 +90,7 @@ class experiment_engine(object):
             scores = []
             target = []
             optimizer.zero_grad()
-            for i, (multi_data, labels, labels_conf, paths, mask) in tqdm.tqdm(enumerate(dataloader), leave=False, total=len(dataloader)):
+            for i, (multi_data, labels, labels_conf, paths, mask, attn_mask) in tqdm.tqdm(enumerate(dataloader), leave=False, total=len(dataloader)):
                 step += 1
                 if self.warmup and step < 500:
                     lr_scale = min(1., float(step + 1) / 500.)
@@ -118,7 +118,7 @@ class experiment_engine(object):
                 out, _, _, attn_over_layers = model(x=multi_feat, src_mask=mask)
                 loss = criterion(out, labels_conf)
                 if use_attn_guide:
-                    attn_guide_loss = criterion_attn(attn_over_layers, attn_mask)
+                    attn_guide_loss = criterion_attn(attn_over_layers, attn_mask, bs=len(labels))
                     if torch.isnan(attn_guide_loss):
                         pdb.set_trace()
                     loss += lambda_attn * attn_guide_loss
@@ -144,14 +144,15 @@ class experiment_engine(object):
                 print_report(output, target, name='Train', epoch=epoch)
 
             val_loss, val_acc, summary = self.eval(model, criterion,
-                                 epoch=epoch, mode='merge-train-valid', feature_extractor=feature_extractor)
+                                 epoch=epoch, mode='train-on-train-valid' if kwargs['mode']!='train' else 'val', feature_extractor=feature_extractor)
+            eval_stats_dict[epoch] = summary
             if step > 500 and self.scheduler == 'reduce':
                 scheduler.step(val_loss)
             if val_acc >= val_acc_max:
                 # self.eval(model, criterion,
                 #           epoch=epoch, mode='test', feature_extractor=feature_extractor)
                 print('Valid acc increased ({:.6f} --> {:.6f}).  Saving model...'.format(val_acc_max, val_acc))
-                self.save_model(model, 'best', v_acc)
+                self.save_model(model, 'best', val_acc)
             self.save_model(model, epoch, val_acc)
             if val_acc > val_acc_max:
                 val_acc_max = val_acc
@@ -238,7 +239,9 @@ class experiment_engine(object):
 
     def eval_sliding(self, model, criterion,
                      epoch=None,  mode='val', feature_extractor=None):
-        if 'val' in mode or 'ema' in mode:
+        if mode == 'train-on-train-valid':
+            dataloader = self.train_val_loader
+        elif 'val' in mode or 'ema' in mode:
             dataset = self.val_loader
         elif 'test' in mode:
             dataset = self.test_loader
@@ -322,7 +325,7 @@ class experiment_engine(object):
     
     def eval_crop(self, model, criterion,
                   epoch=None, mode='val', feature_extractor=None):
-        if 'merge-train-valid' in mode:
+        if mode == 'train-on-train-valid':
             dataloader = self.train_val_loader
         elif 'val' in mode or 'ema' in mode:
             dataloader = self.val_loader
@@ -396,8 +399,8 @@ class experiment_engine(object):
         pred_conf_max = predictions_max_sm.float().cpu().numpy()  # Image x Classes
         # val_acc = accuracy_score(val_target, val_output)
         
-        val_acc, results_summary = compute_case(results_list, pred_conf_max, verbose=(epoch is None), mode=mode,
-                                   savepath=self.savedir, save=self.save_result)
+        # val_acc, results_summary = compute_case(results_list, pred_conf_max, verbose=(epoch is None), mode=mode,
+        #                            savepath=self.savedir, save=self.save_result)
         if self.mode == 'test' or self.mode == 'valid':
             sp = self.savedir
         else:

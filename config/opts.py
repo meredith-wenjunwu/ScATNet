@@ -18,7 +18,7 @@ def size(arg):
 def general_opts(parser):
     group = parser.add_argument_group('General Options')
     group.add_argument('--load-config', default=None, type=str, help='path to config')
-    group.add_argument('--mode', default='train', choices=['train', 'test', 'valid', 'test-on-train-valid', 'test-on-train' 'merge-train-valid'],
+    group.add_argument('--mode', default='train', choices=['train', 'test', 'valid', 'train-on-train-valid', 'test-on-train-valid', 'test-on-train'],
                         help='Experiment mode')
     group.add_argument('--resize1-scale', default=[1.0], type=float, nargs="+", help='number of scales for image')
     group.add_argument('--resize2-scale', default=[1.0], type=float, nargs="+", help='number of scales for crops')
@@ -69,6 +69,8 @@ def visualization_opts(parser):
                         help='save results to txt files or not')
     group.add_argument('--save-top-k', action='store_true', default=False,
                        help='Saving top k crops')
+    group.add_argument('--save-attn', action='store_true', default=False,
+                       help='Saving attention results')
     return parser
 
 
@@ -206,7 +208,7 @@ def get_config():
     torch.set_num_threads(args.workers)
 
     timestr = time.strftime("%Y%m%d-%H%M%S")
-    if args.mode == 'train':
+    if args.mode == 'train' or args.mode == 'train-on-train-valid':
         model_dir = '{}_{}x{}_{}'.format(os.path.basename(os.path.dirname(args.data)),
                                          args.resize1[0], args.resize1[1],
                                          timestr)

@@ -22,8 +22,12 @@ class MultiScaleAttnDataset(Dataset):
         self.image_case_list = []
         self.maskfolder = opts['mask']
         self.mask_type = opts['mask_type']
-        with open(datasetfile, 'r') as f:
-            self.image_list = [line.rstrip() for line in f]
+        if not isinstance(datasetfile, list):
+            datasetfile = [datasetfile]
+        self.image_list = []
+        for df in datasetfile:
+            with open(df, 'r') as f:
+                self.image_list.extend([line.rstrip() for line in f])
         self.window_size = opts['resize1']
         self.opts = opts
         self.binarized_data = binarized_data
