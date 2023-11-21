@@ -60,8 +60,6 @@ def generate_average_checkpts(epoch_numbers, checkpoint_dir, after_ep):
         checkpoints = []
         curr_epoch_num = epoch_numbers[:average_i]
         for f_name in file_names:
-            # first split on _ep_
-            # then split on '.pth'
             if 'best' in f_name:
                 continue
 
@@ -99,7 +97,8 @@ if __name__ == '__main__':
     else:
         checkpoint_dirs = [args.checkpoint_dir]
     for checkpoint_dir in checkpoint_dirs:
-
+        # if os.path.exists(os.path.join(checkpoint_dir, 'best_model.pt')) or os.path.exists(os.path.join(checkpoint_dir, 'best_model.pth')):
+        #     continue
         config = glob.glob(os.path.join(checkpoint_dir, 'config*.json'))
         if args.load_config and len(config) > 0:
                 args_all = load_arguments(parser, config[0])
@@ -113,23 +112,26 @@ if __name__ == '__main__':
             epoch_acc = []
             for i, ep in enumerate(epoch):
                 if int(ep) > args.after_ep:
-                    epoch_acc.append((ep, min(val_stats[ep]["specificity_class"]) * val_stats[ep]['overall_accuracy'] * val_stats[ep]['true_negative_rate_class'][0] / (min(val_stats[ep]["specificity_class"]) + val_stats[ep]['overall_accuracy'] + val_stats[ep]['true_positive_rate_class'][0])))
+                    epoch_acc.append((ep, val_stats[ep]['overall_accuracy']))
+                    # epoch_acc.append((ep, min(val_stats[ep]["specificity_class"]) * val_stats[ep]['overall_accuracy'] * val_stats[ep]['true_negative_rate_class'][0] / (min(val_stats[ep]["specificity_class"]) + val_stats[ep]['overall_accuracy'] + val_stats[ep]['true_positive_rate_class'][0])))
             sorted_epoch_acc = sorted(epoch_acc, key=lambda x: (x[1], x[0]), reverse=True)
-            epoch_numbers = [int(x[0]) for x in sorted_epoch_acc[:7]]
+            epoch_numbers = [int(x[0]) for x in sorted_epoch_acc[:5]]
             model_fnames = generate_average_checkpts(epoch_numbers, checkpoint_dir, args.after_ep)
+            epoch_acc = []
             for model_fname in model_fnames:
                 args_all.resume = model_fname
                 args_all.mode = args.mode
                 result = main_op(vars(args_all))
+                # metric = result[2]['overall_accuracy']
                 metric = min(result[2]["specificity_class"]) * result[2]['overall_accuracy'] * result[2]['true_negative_rate_class'][0] / (min(result[2]["specificity_class"]) + result[2]['overall_accuracy'] + result[2]['true_negative_rate_class'][0])  
                 epoch_acc.append((model_fname, metric))
             sorted_epoch_acc = sorted(epoch_acc, key=lambda x: (x[1], x[0]), reverse=True)
-            best_epoch = sorted_epoch_acc[0][0]
-            pdb.set_trace()
-            if 'average' in best_epoch:
-                best_checkpt = best_epoch
-            else:
-                best_checkpt = glob.glob(os.path.join(checkpoint_dir, '*_{}_*.*'.format(best_epoch)))[0]
+            # pdb.set_trace()
+            best_checkpt = sorted_epoch_acc[0][0]
+            # if 'average' in best_epoch:
+            #     best_checkpt = best_epoch
+            # else:
+            #     best_checkpt = glob.glob(os.path.join(checkpoint_dir, '*_{}_*.*'.format(best_epoch)))[0]
 
         else:
             result_summary = {}
@@ -149,7 +151,7 @@ if __name__ == '__main__':
             output_fname = os.path.join(checkpoint_dir, 'val_stats.json')
             with open(output_fname, 'w') as json_file:
                 json.dump(result_summary, json_file)
-        
+
         # selected model
         args_all.resume = best_checkpt
         args_all.mode = 'test'
@@ -157,7 +159,7 @@ if __name__ == '__main__':
         result = main_op(vars(args_all))
         print(json.dumps(result[2], indent=4, sort_keys=True))
         print('Best checkpoint for {} \n is {}'.format(os.path.basename(checkpoint_dir), os.path.basename(best_checkpt)))
-        shutil.copyfile(best_checkpt, os.path.join(checkpoint_dir, 'best_model.{}'.format(os.path.splitext(best_checkpt)[1])))
+        shutil.copyfile(best_checkpt, os.path.join(checkpoint_dir, 'best_model{}'.format(os.path.splitext(best_checkpt)[1])))
 
 
 
